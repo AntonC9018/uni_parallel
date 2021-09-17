@@ -1,0 +1,26 @@
+===========================
+La aceste intrebari trebuie sa cunoasca raspunsurile studentii care nu am elaborat lucrarea de laborator nr. 3. Cu alte cuvinte nu au modificat nici intr-un fel programul Exemplu_3_9_!_new.cpp.
+=============================
+
+1)  Ce problema rezolva programul Exemplu_3_9_!_new.cpp.
+2)  Descriptorul OUT cu ce fisier este asociat. Argumentati raspunsul  prin explicarea functiilor MPI necesare.
+3)  Explicati fragmentul de cod in care se distruge fisierul, daca el exista.
+4)  Pentru ce operatii este accesibil fisierul, argumentati raspunsul  prin explicarea functiilor MPI necesare.
+5)  Explicati cum se creaza tipul de date MPI_ROW si ce semnifica acest tip de date. Argumentati raspunsul  prin explicarea functiilor MPI necesare.
+6)  Ce semnificatie au variabilele etype si ftype 0 in program. Argumentati raspunsul prin explicarea functiilor MPI necesare.
+7)  Explicati cum se creaza tipul de date ftype1 si ce semnifica acest tip de date. Argumentati raspunsul prin explicarea functiilor MPI necesare.
+8)  Explicati cum se creaza tipul de date ftype2 si ce semnifica acest tip de date. Argumentati raspunsul prin explicarea functiilor MPI necesare.
+9)  Explicati functia MPI in care se determina "vederea" pentru procesul cu rancul 0.
+10) Explicati functia MPI in care procesul cu rancul 0 inscrie datele in fisier.
+11) Explicati functia MPI in care se determina "vederea" pentru procesul cu rancul 1.
+12) Explicati functia MPI in care procesul cu rancul 1 inscrie datele in fisier.
+13) Explicati functia MPI in care se determina "vederea" pentru procesul cu rancul 2.
+14) Explicati functia MPI in care procesul cu rancul 2 inscrie datele in fisier.
+15) Explicati functia MPI in care se determina "vederea" pentru procesul cu rancul 3.
+16) Explicati functia MPI in care procesul cu rancul 3 citeste datele din  fisier.
+17) Explicati functia MPI in care se determina "vederea" pentru procesul cu rancul 4.
+18) Explicati functia MPI in care procesul cu rancul 4 citeste datele din  fisier.
+18) Explicati functia MPI in care se determina "vederea" pentru procesul cu rancul 5.
+19) Explicati functia MPI in care procesul cu rancul 5 citeste datele din  fisier.
+20) Cum pot fi vizualizate datele din fisier.
+
