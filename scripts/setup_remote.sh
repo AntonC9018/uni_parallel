@@ -57,6 +57,6 @@ then
     rm compile.sh
 fi
 
-echo $DMDBIN/dmd -c \$1.d -of=\$1.o -I$HOME/OpenMPI-master/source -I%HOME%/dmd/usr/include/dmd/phobos -I%HOME%/dmd/usr/include/dmd/druntime/import > compile.sh
+echo $DMDBIN/dmd -c \$1.d -of=\$1.o -I%HOME%/OpenMPI-master/source -I%HOME%/dmd/usr/include/dmd/phobos -I%HOME%/dmd/usr/include/dmd/druntime/import > compile.sh
 echo gcc $(mpicc --showme:link) -L%HOME%/dmd/usr/lib64 \$1.o -o \$1.out >> compile.sh
 chmod +x compile.sh 
