@@ -22,3 +22,6 @@ Leave a star as a way to say "Thank you". Enjoy!
 If the server now has a newer version of OpenMPI, feel free to fix [my D bindings fork](https://github.com/AntonC9018/OpenMPI) back.
 You will probably just need to rollback a few commits.
 Or just use the [initial repo that I forked](https://github.com/DlangScience/OpenMPI) (change the `setup_remote.sh` script), which should update by the time you're reading this.
+
+
+> Spoiler: It WILL NOT *just build* on windows, and the mpi.d file is included ONLY FOR REFERENCE.
