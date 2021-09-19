@@ -57,5 +57,5 @@ then
     rm compile.sh
 fi
 
-echo $DMDBIN/dmd \$1.d -of=\$1.out -I~/OpenMPI-master/source > compile.sh
+echo $DMDBIN/dmd \$1.d -of=\$1.out -I$HOME/OpenMPI-master/source > compile.sh
 chmod +x compile.sh 
