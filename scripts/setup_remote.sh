@@ -3,7 +3,7 @@ set -e
 USER_FOLDER=$HOME/$1
 DMDBIN=$HOME/dmd/usr/bin
 PATH=$PATH:$DMDBIN
-DFLAGS_TEXT="DFLAGS=-I%HOME%/dmd/usr/include/dmd/phobos -I%HOME%/dmd/usr/include/dmd/druntime/import -L-L%HOME%/dmd/usr/lib64"
+DFLAGS_TEXT="DFLAGS=-I%HOME%/dmd/usr/include/dmd/phobos -I%HOME%/dmd/usr/include/dmd/druntime/import"
 MPI_LFLAGS_TEXT="LFLAGS=$(mpicc --showme:link)"
 
 # Download and unpack dmd
@@ -57,5 +57,6 @@ then
     rm compile.sh
 fi
 
-echo $DMDBIN/dmd \$1.d -of=\$1.out -I$HOME/OpenMPI-master/source > compile.sh
+echo $DMDBIN/dmd -c \$1.d -of=\$1.o -I$HOME/OpenMPI-master/source -I%HOME%/dmd/usr/include/dmd/phobos -I%HOME%/dmd/usr/include/dmd/druntime/import > compile.sh
+echo gcc $(mpicc --showme:link) -L%HOME%/dmd/usr/lib64 \$1.o -o \$1.out >> compile.sh
 chmod +x compile.sh 
