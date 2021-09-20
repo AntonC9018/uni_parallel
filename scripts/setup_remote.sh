@@ -1,10 +1,10 @@
+# Enable exit on error
 set -e
 
 USER_FOLDER=$HOME/$1
 DMDBIN=$HOME/dmd/usr/bin
 PATH=$PATH:$DMDBIN
 DFLAGS_TEXT="DFLAGS=-I%HOME%/dmd/usr/include/dmd/phobos -I%HOME%/dmd/usr/include/dmd/druntime/import"
-MPI_LFLAGS_TEXT="LFLAGS=$(mpicc --showme:link)"
 
 # Download and unpack dmd
 if [ ! -d ~/dmd ];
@@ -18,13 +18,13 @@ then
     fi
     wget http://downloads.dlang.org/releases/2017/dmd-2.076.0-0.fedora.x86_64.rpm
     
-    # unpacks the archive
+    # Unpacks the archive
     rpm2cpio $package_name | cpio -idmv
     cd ..
 fi
 
 # Download and configure OpenMPI D bindings
-if [ ! -d OpenMPI-master ];
+if [ ! -d OpenMPI-992d9a1b42159e9cf1a583e2feeb88d9e2cf0a56 ];
 then
 
     archive_name=master.tar.gz
@@ -32,10 +32,10 @@ then
     then
         rm $archive_name
     fi
-    wget https://github.com/AntonC9018/OpenMPI/archive/master.tar.gz
+    wget https://github.com/AntonC9018/OpenMPI/archive/992d9a1b42159e9cf1a583e2feeb88d9e2cf0a56/master.tar.gz
     tar -xf $archive_name
 
-    cd OpenMPI-master
+    cd OpenMPI-992d9a1b42159e9cf1a583e2feeb88d9e2cf0a56
     echo [Environment] > dmd.conf
     echo $DFLAGS_TEXT >> dmd.conf
     chmod +x gen/setup.sh gen/get_mpi.h.sh
@@ -50,7 +50,6 @@ cd $USER_FOLDER
 
 echo [Environment] > dmd.conf  
 echo $DFLAGS_TEXT >> dmd.conf  
-echo $MPI_LFLAGS_TEXT >> dmd.conf  
 
 if [ -f compile.sh ];
 then
@@ -58,5 +57,5 @@ then
 fi
 
 echo $DMDBIN/dmd -c \$1.d -of=\$1.o -I%HOME%/OpenMPI-master/source -I%HOME%/dmd/usr/include/dmd/phobos -I%HOME%/dmd/usr/include/dmd/druntime/import > compile.sh
-echo gcc $(mpicc --showme:link) -L%HOME%/dmd/usr/lib64 \$1.o -o \$1.out >> compile.sh
+echo gcc $(mpicc --showme:link) -L%HOME%/dmd/usr/lib64 -lphobos2 \$1.o -o \$1.out >> compile.sh
 chmod +x compile.sh 
