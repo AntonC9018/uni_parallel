@@ -513,7 +513,7 @@ enum MPI_T_ENUM_NULL = cast(MPI_T_enum) null;
 /*
  * MPI_INFO_ENV handle
  */
-alias MPI_INFO_ENV = OMPI_PREDEFINED_GLOBAL!(MPI_Info, ompi_mpi_info_env);
+// alias MPI_INFO_ENV = OMPI_PREDEFINED_GLOBAL!(MPI_Info, ompi_mpi_info_env);
 
 enum MPI_STATUS_IGNORE = cast(MPI_Status*) 0;
 enum MPI_STATUSES_IGNORE = cast(MPI_Status*) 0;
@@ -798,7 +798,7 @@ alias MPI_COMM_SELF = OMPI_PREDEFINED_GLOBAL!(MPI_Comm, ompi_mpi_comm_self);
 
 alias MPI_GROUP_EMPTY = OMPI_PREDEFINED_GLOBAL!(MPI_Group, ompi_mpi_group_empty);
 
-alias MPI_MESSAGE_NO_PROC = OMPI_PREDEFINED_GLOBAL!(MPI_Message, ompi_message_no_proc);
+// alias MPI_MESSAGE_NO_PROC = OMPI_PREDEFINED_GLOBAL!(MPI_Message, ompi_message_no_proc);
 
 alias MPI_MAX = OMPI_PREDEFINED_GLOBAL!(MPI_Op, ompi_mpi_op_max);
 alias MPI_MIN = OMPI_PREDEFINED_GLOBAL!(MPI_Op, ompi_mpi_op_min);
@@ -813,7 +813,7 @@ alias MPI_BXOR = OMPI_PREDEFINED_GLOBAL!(MPI_Op, ompi_mpi_op_bxor);
 alias MPI_MAXLOC = OMPI_PREDEFINED_GLOBAL!(MPI_Op, ompi_mpi_op_maxloc);
 alias MPI_MINLOC = OMPI_PREDEFINED_GLOBAL!(MPI_Op, ompi_mpi_op_minloc);
 alias MPI_REPLACE = OMPI_PREDEFINED_GLOBAL!(MPI_Op, ompi_mpi_op_replace);
-alias MPI_NO_OP = OMPI_PREDEFINED_GLOBAL!(MPI_Op, ompi_mpi_op_no_op);
+// alias MPI_NO_OP = OMPI_PREDEFINED_GLOBAL!(MPI_Op, ompi_mpi_op_no_op);
 
 /* C datatypes */
 alias MPI_DATATYPE_NULL = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_datatype_null);
@@ -837,8 +837,8 @@ alias MPI_LONG_DOUBLE_INT = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_longd
 alias MPI_LONG_INT = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_long_int);
 alias MPI_SHORT_INT = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_short_int);
 alias MPI_2INT = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_2int);
-// alias MPI_UB = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_ub); // not in recent MPI
-// alias MPI_LB = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_lb); // not in recent MPI
+alias MPI_UB = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_ub); // not in recent MPI
+alias MPI_LB = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_lb); // not in recent MPI
 alias MPI_WCHAR = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_wchar);
 static if (OPAL_HAVE_LONG_LONG)
     private enum _HAVE_LONG = 1;
@@ -928,7 +928,7 @@ alias MPI_CXX_DOUBLE_COMPLEX    = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi
 alias MPI_CXX_LONG_DOUBLE_COMPLEX = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_cxx_ldblcplex);
     
 /* New datatypes from the 3.0 standard */
-alias MPI_COUNT                 = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_count);
+// alias MPI_COUNT                 = OMPI_PREDEFINED_GLOBAL!(MPI_Datatype, ompi_mpi_count);
 
 alias MPI_ERRORS_ARE_FATAL = OMPI_PREDEFINED_GLOBAL!(MPI_Errhandler, ompi_mpi_errors_are_fatal);
 alias MPI_ERRORS_RETURN = OMPI_PREDEFINED_GLOBAL!(MPI_Errhandler, ompi_mpi_errors_return);

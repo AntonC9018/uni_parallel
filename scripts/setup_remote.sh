@@ -4,7 +4,7 @@ set -e
 USER_FOLDER=$HOME/$1
 DMDBIN=$HOME/dmd/usr/bin
 PATH=$PATH:$DMDBIN
-DFLAGS_TEXT="DFLAGS=-I%HOME%/dmd/usr/include/dmd/phobos -I%HOME%/dmd/usr/include/dmd/druntime/import"
+DFLAGS_TEXT="DFLAGS=-I%HOME%/dmd/usr/include/dmd/phobos -I%HOME%/dmd/usr/include/dmd/druntime/import -L-L%HOME%/dmd/usr/lib64"
 
 # Download and unpack dmd
 if [ ! -d ~/dmd ];
@@ -24,7 +24,7 @@ then
 fi
 
 # Download and configure OpenMPI D bindings
-if [ ! -d OpenMPI-992d9a1b42159e9cf1a583e2feeb88d9e2cf0a56 ];
+if [ ! -d OpenMPI-master ];
 then
 
     archive_name=master.tar.gz
@@ -32,15 +32,16 @@ then
     then
         rm $archive_name
     fi
-    wget https://github.com/AntonC9018/OpenMPI/archive/992d9a1b42159e9cf1a583e2feeb88d9e2cf0a56/master.tar.gz
+    wget https://github.com/AntonC9018/OpenMPI/archive/master.tar.gz
     tar -xf $archive_name
 
-    cd OpenMPI-992d9a1b42159e9cf1a583e2feeb88d9e2cf0a56
+    cd OpenMPI-master
     echo [Environment] > dmd.conf
     echo $DFLAGS_TEXT >> dmd.conf
     chmod +x gen/setup.sh gen/get_mpi.h.sh
     # This should just work
     bash ./gen/setup.sh
+    cd ..
     rm $archive_name
 fi
 
@@ -56,6 +57,7 @@ then
     rm compile.sh
 fi
 
-echo $DMDBIN/dmd -c \$1.d -of=\$1.o -I%HOME%/OpenMPI-master/source -I%HOME%/dmd/usr/include/dmd/phobos -I%HOME%/dmd/usr/include/dmd/druntime/import > compile.sh
-echo gcc $(mpicc --showme:link) -L%HOME%/dmd/usr/lib64 -lphobos2 \$1.o -o \$1.out >> compile.sh
+echo set -e > compile.sh
+echo $DMDBIN/dmd -c -g \$1.d $HOME/OpenMPI-master/source/mpi/package.d -of=\$1.o -I$HOME/dmd/usr/include/dmd/phobos -I$HOME/dmd/usr/include/dmd/druntime/import >> compile.sh
+echo gcc \$1.o -o \$1.out -l:$HOME/dmd/usr/lib64/libphobos2.a $(mpiCC --showme:link) >> compile.sh
 chmod +x compile.sh 

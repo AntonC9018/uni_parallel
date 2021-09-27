@@ -1,3 +1,4 @@
+@echo off
 set REMOTE=MI_IA1@hpc.usm.md
 set USER_FOLDER=CURMANSCHII
 
