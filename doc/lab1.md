@@ -18,12 +18,12 @@ $$
 \end{cases}$$
 
 Vom spune că linia $ i $ strict domină linia $ k $ în matricea $ A $ dacă şi numai dacă $ a_{ij} > a_{kj}, \forall j \in J $. 
-Dacă există j pentru care inegalitatea nu este strictă, atunci vom spune că linia $ i $ domină (nestrict) linia $ k $. 
+Dacă există $ j $ pentru care inegalitatea nu este strictă, atunci vom spune că linia $ i $ domină (nestrict) linia $ k $. 
 
 Similar, vom spune: coloana $ j $ strict domină coloana $ l $ în matricea $ B $ dacă şi numai dacă $ b_{ij} > b_{il}, \forall i \in I $.
 Dacă există $ i $ pentru care inegalitatea nu este strictă, atunci vom spune: *coloana $ j $ domină (nestrict) coloana $ l $*.
 
-In baza definiției prezentăm următorul algoritm secvential pentru determinarea situației de echilibru.
+În baza definiției prezentăm următorul algoritm secvential pentru determinarea situației de echilibru.
 
 **Algoritm 6.1**
 
@@ -83,7 +83,7 @@ Astfel obţinem matricele $ A^\prime = (2) $ și $ B^\prime = (0) $,
 
 
 **Exemplul 6.2**. 
-Considerăm următoarele matrice 
+Considerăm următoarele matrici 
 $
 A = \begin{pmatrix}
  2 & 0 & 1 \\\\
@@ -98,30 +98,30 @@ B = \begin{pmatrix}
 $
 În matricea A nu există linii dominate, în matricea B nu există colane dominate.
 
-**Exemplul 6.3.** Considerăm următoarele matrice:
+**Exemplul 6.3.** Considerăm următoarele matrici:
 $  A = {|| a_{ij} ||} _ {j \in J} ^ {i \in I} , B = {|| b_{ij} ||} _ {j \in J} ^ {i \in I} ,$
-unde $ a_{ij} = c, b_{ij} = k, \forall i \in I, \forall j \in J $ și orice constante c și k.
+unde $ a_{ij} = c, b_{ij} = k, \forall i \in I, \forall j \in J $ și orice constante $ c $ și $ k. $
 Atunci mulțimea de situații de echilibru este $ \\{ (i, j): \forall i \in I, \forall j \in J \\} $.
 
 
 **6.2 Algoritmul paralel pentru determinarea situatiilor Nash de echilibru.**
 
-Structura algoritmului paralel construit va fi determinat de modul de paralelizare la nivel de date. 
-Adica se pot utiliza urmatoarele modalitați de divizare și distribuire a matricelor A si B:
+Structura algoritmului paralel construit va fi determinată de modul de paralelizare la nivel de date. 
+Adică se pot utiliza urmatoarele modalități de divizare și distribuire a matricilor $ A $ si $ B $:
 
-- Matricele  se  divizeaza  in  submatrici  dreptunghiulare  de  orice  dimensiune.  
-  În acest caz se complica foarte tare modalitatea de construire a situatiilor de echilibru petru jocul cu matricele 
-  initiale.  Pentru lucrarea de laborator nu este obligatoriul utilizarea acestui mod de divizare a matricelor; 
-- Matricele  se  divizeaza  in  submatrici  de  tip  linii  sau  submatrici  de  tip  coloana.  In  acest  caz 
-  construirea situatiilor de echilibru pentru jocul initial  este destul de simpla. 
+- Matricile se divizează în submatrici dreptunghiulare de orice dimensiune.  
+  În acest caz se complică foarte tare modalitatea de construire a situațiilor de echilibru petru jocul cu matricele 
+  inițiale. Pentru lucrarea de laborator nu este obligatoriul utilizarea acestui mod de divizare a matricelor; 
+- Matricile se divizează în submatrici de tip linii sau submatrici de tip coloană. În acest caz 
+  construirea situațiilor de echilibru pentru jocul inițial este destul de simplă. 
 
-Vom descrie matematic algoritmul paralel pentru determinarea situatiilor Nash de echilibru în strategii 
+Vom descrie matematic algoritmul paralel pentru determinarea situațiilor Nash de echilibru în strategii 
 pure pentru jocul bimatriceal $ G = \langle I, J, A, B \rangle $, unde $ A = {|| a_{ij} ||} _ {j \in J} ^ {i \in I}, B = {|| b_{ij} ||} _ {j \in J} ^ {i \in I} $
-Vom presupune că matricea $ A $ este divizată în submatrici de tip coloana și matricea $ B $ este divizată în submatrici de tip linii.
+Vom presupune că matricea $ A $ este divizată în submatrici de tip coloană și matricea $ B $ este divizată în submatrici de tip linii.
 Adică vom obține un șir de submatrici $ Sub_{A^t} = {|| a_{ij} ||} ^ {j \in J_k} _ {i \in I} $ și $ Sub_{A^t} = {|| b_{ij} ||} ^ {j \in J} _ {i \in I_k} $, 
 unde $ J_k = \\{ i_k, i _ {k + 1}, \cdots, i _ {k + p} \\} $ și $ I_k = \\{ j_k, j _ {k + 1}, \cdots, j _ {k + p} \\} $.
-$ Sub_{A^t} $ este o submatrice care consta din $ p $ coloane ale matricii $ A $ incepând cu coloana numarul $ k $ și este "distribuita" procesulul cu rancul $ t $. 
-Similar este o submatrice care constă din $ p $ linii ale matrice B incepând cu linia $ k $ si este la fel distribuita procesului cu 
+$ Sub_{A^t} $ este o submatrice care consta din $ p $ coloane ale matricii $ A $ incepând cu coloana numarul $ k $ și este "distribuită" procesulul cu rancul $ t $. 
+Similar este o submatrice care constă din $ p $ linii ale matricei B incepând cu linia $ k $ si este la fel distribuită procesului cu 
 rancul $ t $.
 Folosind algoritmul 6.1 descris mai sus procesul cu rancul $ t $ va determină pentru orice $ j_k \in J_k $ 
 graficul aplicației mutivoce $ i^\star (j_k) = Arg \max _ {i \in I} a_{ij_k} $, 
@@ -132,10 +132,10 @@ adică $ gr ^ {k} _ { j^\prime } = \\{ (i, j): i = i_k, j = j^\star(i_k) \\} $
 În final același proces $ t $ va determina $ {LineGr} ^ t = \cup _ k { gr } ^ k _ { i ^ \prime } $ 
 și $ {ColGr} ^ t = \cup _ k { gr } ^ k _ { j ^ \prime } $. 
 *Se observa ca această modalitate de divizare a matricelor permite ca fiecare proces să determine $ LineGr^t $ și $ ColGr^t $ fără a executa alte operații suplimentare*.
-*Ușor se poate arăta că există modalități de divizare a matricelor în care deja procesul cu rancul $ t $ nu poate determina "de unul singur" $ i^\star (j_k) $ și $ j^\star (i_k) $ (de exemplu daca matricele sunt divizate in submatrici linii)*.
+*Ușor se poate arăta că există modalități de divizare a matricelor în care deja procesul cu rancul $ t $ nu poate determina "de unul singur" $ i^\star (j_k) $ și $ j^\star (i_k) $ (de exemplu daca matricile sunt divizate in submatrici linii)*.
 
-Vom exemplifica algoritmul descris mai sus. Considerăm jocul din Exemplu 6.1 si fie ca $t=0,1,2$. Atunci 
-submatricele corespunzatoare proceselor vor fi:
+Vom exemplifica algoritmul descris mai sus. Considerăm jocul din Exemplu 6.1 și fie ca $t=0,1,2$. 
+Atunci submatricile corespunzătoare proceselor vor fi:
 
 $$
 A^0 = \begin{pmatrix}
@@ -225,7 +225,7 @@ $
   {ColGr} ^ 2  = \\{ (4, 0), (4, 1), (4, 2), (4, 3), (4, 4), (5, 0), (5, 1), (5, 2), (5, 3), (5, 4), (5, 5) \\},
 $
 
-Procesul cu rancul 0 va determina pentru indici globali:
+Procesul cu rancul 0 va determina $ LineGr $ și $ ColGr $ pentru indici globali:
 
 $$ 
   {LineGr} = {LineGr} ^ 0 \cup {LineGr} ^ 1 \cup {LineGr} ^ 2 = 
@@ -241,7 +241,7 @@ $$
 și 
 
 $$ 
-  {LineGr} = {LineGr} ^ 0 \cup {LineGr} ^ 1 \cup {LineGr} ^ 2 = 
+  {ColGr} = {ColGr} ^ 0 \cup {ColGr} ^ 1 \cup {ColGr} ^ 2 = 
   \left. 
     \begin{cases} 
       (0, 1), (1, 2), (2, 0), (2, 1), (2, 2), \\\\ 
