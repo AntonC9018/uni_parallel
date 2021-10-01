@@ -4,8 +4,9 @@ set USER_FOLDER=CURMANSCHII
 
 scp setup_remote.sh %REMOTE%:~
 
-:: Intall dmd
+:: Install dmd, setup environment, generate mpi.d
 ssh %REMOTE% "bash ~/setup_remote.sh %USER_FOLDER%"
+scp ..\source\mpihelper.d %REMOTE%:~/%USER_FOLDER%
 
 echo Log in to the server by doing `ssh %REMOTE%`.
 echo Copy source files by doing `copy_source lab1.d`

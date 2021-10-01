@@ -120,10 +120,10 @@ pure pentru jocul bimatriceal $ G = \langle I, J, A, B \rangle $, unde $ A = {||
 Vom presupune că matricea $ A $ este divizată în submatrici de tip coloană și matricea $ B $ este divizată în submatrici de tip linii.
 Adică vom obține un șir de submatrici $ Sub_{A^t} = {|| a_{ij} ||} ^ {j \in J_k} _ {i \in I} $ și $ Sub_{A^t} = {|| b_{ij} ||} ^ {j \in J} _ {i \in I_k} $, 
 unde $ J_k = \\{ i_k, i _ {k + 1}, \cdots, i _ {k + p} \\} $ și $ I_k = \\{ j_k, j _ {k + 1}, \cdots, j _ {k + p} \\} $.
-$ Sub_{A^t} $ este o submatrice care consta din $ p $ coloane ale matricii $ A $ incepând cu coloana numarul $ k $ și este "distribuită" procesulul cu rancul $ t $. 
-Similar este o submatrice care constă din $ p $ linii ale matricei B incepând cu linia $ k $ si este la fel distribuită procesului cu 
+$ Sub_{A^t} $ este o submatrice care constă din $ p $ coloane ale matricei $ A $ incepând cu coloana numarul $ k $ și este "distribuită" procesului cu rancul $ t $. 
+Similar este o submatrice care constă din $ p $ linii ale matricei B incepând cu linia $ k $ și este la fel distribuită procesului cu 
 rancul $ t $.
-Folosind algoritmul 6.1 descris mai sus procesul cu rancul $ t $ va determină pentru orice $ j_k \in J_k $ 
+Folosind algoritmul 6.1 descris mai sus procesul cu rancul $ t $ va determina pentru orice $ j_k \in J_k $ 
 graficul aplicației mutivoce $ i^\star (j_k) = Arg \max _ {i \in I} a_{ij_k} $, 
 adică $ {gr} ^ {k} _ {i^\star} = \\{ (i, j): i = i ^ \star (j_k), j = j_k \\} $.
 Similar, procesul cu rancul $ t $ va determina pentru orice $ i_k \in I_k $ graficul aplicației mutivoce 
@@ -256,7 +256,7 @@ $$
 Atunci $ NE = LineGr \cap ColGr = \\{ (2, 2), (3, 3), (4, 4) \\} $.
 
 
-**Algoritmul paralel pentru determinarea situaţiilor de echilibru trebuie sa contină urmatoarele:**
+**Algoritmul paralel pentru determinarea situaţiilor de echilibru trebuie sa conțină urmatoarele:**
 
 - a. Eliminarea, în paralel, din matricea $A$ şi $B$ a liniilor care sunt (strict) dominate în matricea $A$ și din matricea 
 $A$ şi $B$ a coloanelor care sunt (strict) dominate în matricea $B$. 
