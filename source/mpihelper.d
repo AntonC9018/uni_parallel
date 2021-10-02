@@ -6,8 +6,8 @@ struct InitInfo
 {
     int size;
     int rank;
-    char[] _argsBuffer;
-    char[][] _argPositions;
+    char** argv;
+    int argc;
 
     scope char*[] args() { return argv[0..argc]; }
     scope char* processName() { return argv[0]; }
@@ -19,8 +19,8 @@ InitInfo initialize(string[] programArgs)
     with (result)
     {
         import std.string, std.algorithm, std.array;
-        int argv = cast(char**) map!toStringz(programArgs).array.ptr;
-        char** argc = cast(int) args.length;
+        argv = cast(char**) map!toStringz(programArgs).array.ptr;
+        argc = cast(int) args.length;
         MPI_Init(&argc, &argv);
         MPI_Comm_size(MPI_COMM_WORLD, &size);
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
