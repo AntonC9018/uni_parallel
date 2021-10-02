@@ -83,7 +83,7 @@ int send(T)(T buffer, int dest, int tag, MPI_Comm comm = MPI_COMM_WORLD)
 }
 
 /// ditto
-int recv(T)(T buffer, int source, int tag, MPI_Status* status, MPI_Comm comm = MPI_COMM_WORLD)
+int recv(T)(T buffer, int source, int tag, MPI_Status* status = MPI_STATUS_IGNORE, MPI_Comm comm = MPI_COMM_WORLD)
 {
     return MPI_Recv(UnrollBuffer!buffer, source, tag, comm, status);
 }
@@ -92,7 +92,7 @@ int recv(T)(T buffer, int source, int tag, MPI_Status* status, MPI_Comm comm = M
 int sendRecv(T, U)(
     T sendBuffer, int dest, int sendtag, 
     U recvBuffer, int source, int recvtag, 
-    MPI_Status* status, MPI_Comm comm = MPI_COMM_WORLD)
+    MPI_Status* status = MPI_STATUS_IGNORE, MPI_Comm comm = MPI_COMM_WORLD)
 {
     return MPI_Sendrecv(
         UnrollBuffer!sendBuffer, dest,   sendtag, 
