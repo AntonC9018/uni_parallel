@@ -62,43 +62,24 @@ template getMpiType(T)
     else static assert(0);
 }
 
-int send(T)(T[] buffer, int dest, int tag, MPI_COMM comm = MPI_COMM_WORLD)
+template UnrolledCall(alias func)
 {
-    return MPI_Send(buffer.ptr, buffer.length, getMpiType!T, dest, tag, comm);
+    auto UnrolledCall(T, Args...)(T[] thing, Args args)
+    {
+    	return func(thing.ptr, cast(int) thing.length, getMpiType!T, args);
+    }
+    auto UnrolledCall(T, Args...)(T* thing, Args args) if (__traits(compiles, getMpiType!T))
+    {
+    	return func(thing, 1, getMpiType!T, args);
+    }
 }
-// We need this overload because MPI_COMM_WORLD is not a compile-time known constant.
-// int send(T)(T[] buffer, int dest, int tag)
-// {
-//     return send(buffer, dest, tag, MPI_COMM_WORLD);
-// }
 
-int send(T)(in T singleElement, int dest, int tag, MPI_COMM comm = MPI_COMM_WORLD)
+int send(T)(T buffer, int dest, int tag, MPI_COMM comm = MPI_COMM_WORLD)
 {
-    return MPI_Send(&singleElement, 1, getMpiType!T, dest, tag, comm);
+    return UnrolledCall!MPI_Send(buffer, dest, tag, comm);
 }
-// We need this overload because MPI_COMM_WORLD is not a compile-time known constant.
-// int send(T)(in T singleElement, int dest, int tag)
-// {
-//     return send(singleElement, dest, tag, MPI_COMM_WORLD);
-// }
 
-
-int recv(T)(T[] buffer, int source, int tag, MPI_STATUS* status, MPI_COMM comm = MPI_COMM_WORLD)
+int recv(T)(T buffer, int source, int tag, MPI_STATUS* status, MPI_COMM comm = MPI_COMM_WORLD)
 {
-    return MPI_Recv(buffer.ptr, buffer.length, getMpiType!T, source, tag, comm, status);
+    return UnrolledCall!MPI_Recv(buffer, source, tag, comm, status);
 }
-// We need this overload because MPI_COMM_WORLD is not a compile-time known constant.
-// int recv(T)(T[] buffer, int source, int tag, MPI_STATUS* status)
-// {
-//     return recv(buffer, source, tag, MPI_COMM_WORLD, status);
-// }
-
-int recv(T)(out T singleElement, int source, int tag, MPI_STATUS* status, MPI_COMM comm = MPI_COMM_WORLD)
-{
-    return MPI_Recv(&singleElement, 1, getMpiType!T, source, tag, comm, status);
-}
-// We need this overload because MPI_COMM_WORLD is not a compile-time known constant.
-// int recv(T)(T* singleElement, int source, int tag, MPI_STATUS* status)
-// {
-//     return recv(singleElement, source, tag, MPI_COMM_WORLD, status);
-// }
