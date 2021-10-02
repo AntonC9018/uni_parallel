@@ -5,9 +5,7 @@ import std.string;
 
 int main(string[] args)
 {
-	MPI_Status status;
-
-    auto info = mh.initialize(args);
+    auto info = mh.initialize();
     scope(exit) mh.finalize();
     auto processorName = mh.getProcessorName();
 
@@ -21,9 +19,7 @@ int main(string[] args)
     if (groupSize != 1)
         writeln("Something's wrong with the parent");
 
-    import std.string;
-    char[] processName = info.processName.fromStringz;
-
+    string processName() { return args[0]; }
     writeln(
         "Module ", processName, 
         ". Start on the processor rank ", info.rank, 
@@ -39,19 +35,20 @@ int main(string[] args)
     // random unique constant
     enum tag = 10;
     int receiveBuffer;
+	MPI_Status status;
 
     int nextRank() { return (info.rank + 1) % groupSize; }
     int prevRank() { return (info.rank + groupSize - 1) % groupSize; }
 
     if (info.rank == incepIdkWhatThisIs)
     {
-        mh.send(&info.rank, nextRank(), tag);
-        mh.recv(&receiveBuffer, prevRank(), tag, &status);
+        mh.send(&info.rank, nextRank, tag);
+        mh.recv(&receiveBuffer, prevRank, tag, &status);
     }
     else
     {
-        mh.recv(&receiveBuffer, prevRank(), tag, &status);
-        mh.send(&info.rank, nextRank(), tag);
+        mh.recv(&receiveBuffer, prevRank, tag, &status);
+        mh.send(&info.rank, nextRank, tag);
     }
 
     writeln(

@@ -11,7 +11,7 @@ int main(string[] args)
     int namelen;
     MPI_Status status;
 
-    auto info = mh.initialize(args);
+    auto info = mh.initialize();
     scope(exit) mh.finalize();
 
     if (info.rank == 0)

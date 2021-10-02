@@ -1,27 +1,22 @@
 module mpihelper;
 
 import mpi;
+import core.runtime : Runtime, CArgs;
 
 struct InitInfo
 {
     int size;
     int rank;
-    char** argv;
-    int argc;
-
-    char*[] args() { return argv[0..argc]; }
-    char* processName() { return argv[0]; }
+    CArgs args;
 }
 
-InitInfo initialize(string[] programArgs)
+InitInfo initialize()
 {
     InitInfo result;
     with (result)
     {
-        import std.string, std.algorithm, std.array;
-        argv = cast(char**) map!toStringz(programArgs).array.ptr;
-        argc = cast(int) args.length;
-        MPI_Init(&argc, &argv);
+        args = Runtime.cArgs;
+        MPI_Init(&args.argc, &args.argv);
         MPI_Comm_size(MPI_COMM_WORLD, &size);
         MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     }
