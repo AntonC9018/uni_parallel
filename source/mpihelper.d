@@ -68,7 +68,7 @@ template UnrolledCall(alias func)
     {
     	return func(thing.ptr, cast(int) thing.length, getMpiType!T, args);
     }
-    auto UnrolledCall(T, Args...)(T* thing, Args args) if (__traits(compiles, getMpiType!T))
+    auto UnrolledCall(T, Args...)(T* thing, Args args)
     {
     	return func(thing, 1, getMpiType!T, args);
     }
