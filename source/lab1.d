@@ -2,7 +2,7 @@ import core.stdc.stdio;
 import std.conv : to;
 import std.process;
 import mpi;
-import mpihelper = mh;
+import mh = mpihelper;
 
 int main(string[] args)
 {

@@ -1,5 +1,5 @@
 import mpi;
-import mpihelper = mh;
+import mh = mpihelper;
 import std.stdio;
 import std.string;
 

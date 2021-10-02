@@ -29,7 +29,6 @@ import core.stdc.config;
 extern (C):
 
 // BEGIN AUTO
-
 // END AUTO
 
 static if(OMPI_MAJOR_VERSION == 1 && OMPI_MINOR_VERSION < 8)
