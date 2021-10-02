@@ -9,8 +9,8 @@ struct InitInfo
     char** argv;
     int argc;
 
-    scope char*[] args() { return argv[0..argc]; }
-    scope char* processName() { return argv[0]; }
+    char*[] args() { return argv[0..argc]; }
+    char* processName() { return argv[0]; }
 }
 
 InitInfo initialize(string[] programArgs)
@@ -37,7 +37,7 @@ struct ProcessorName
 {
     char[MPI_MAX_PROCESSOR_NAME] _buffer;
     int _size;
-    scope inout(char)[] get() @property inout { return _buffer[0.._size]; }
+    inout(char)[] get() @property inout { return _buffer[0.._size]; }
     alias get this;
 }
 
