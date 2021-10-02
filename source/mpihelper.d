@@ -50,15 +50,15 @@ ProcessorName getProcessorName()
 
 // We need this overload because MPI_COMM_WORLD is not a compile-time known constant.
 // void barrier() { barrier(MPI_COMM_WORLD); }
-void barrier(MPI_COMM comm = MPI_COMM_WORLD) { MPI_Barrier(comm); }
+void barrier(MPI_Comm comm = MPI_COMM_WORLD) { MPI_Barrier(comm); }
 
 
 template getMpiType(T)
 {
     static if (is(T == int))
-        enum getMpiType = MPI_INT;
+        alias getMpiType = MPI_INT;
     else static if (is(T == float))
-        enum getMpiType = MPI_FLOAT;
+        alias getMpiType = MPI_FLOAT;
     else static assert(0, "Type `" ~ T.stringof ~ "` is unsupported");
 }
 
@@ -82,13 +82,13 @@ template UnrollBuffer(alias buffer)
 }
 
 /// Buffer can be either a slice or a pointer to the single element.
-int send(T)(T buffer, int dest, int tag, MPI_COMM comm = MPI_COMM_WORLD)
+int send(T)(T buffer, int dest, int tag, MPI_Comm comm = MPI_COMM_WORLD)
 {
     return MPI_Send(UnrollBuffer!buffer, dest, tag, comm);
 }
 
 /// ditto
-int recv(T)(T buffer, int source, int tag, MPI_STATUS* status, MPI_COMM comm = MPI_COMM_WORLD)
+int recv(T)(T buffer, int source, int tag, MPI_Status* status, MPI_Comm comm = MPI_COMM_WORLD)
 {
     return MPI_Recv(UnrollBuffer!buffer, source, tag, comm, status);
 }
@@ -97,7 +97,7 @@ int recv(T)(T buffer, int source, int tag, MPI_STATUS* status, MPI_COMM comm = M
 int sendRecv(T, U)(
     T sendBuffer, int dest, int sendtag, 
     U recvBuffer, int source, int recvtag, 
-    MPI_Status* status, MPI_COMM comm = MPI_COMM_WORLD)
+    MPI_Status* status, MPI_Comm comm = MPI_COMM_WORLD)
 {
     return MPI_Sendrecv(
         UnrollBuffer!sendBuffer, dest,   sendtag, 

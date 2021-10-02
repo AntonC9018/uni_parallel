@@ -3,7 +3,7 @@ import mh = mpihelper;
 import std.stdio;
 import std.string;
 
-void main(string[] args)
+int main(string[] args)
 {
 	MPI_Status status;
 
@@ -21,7 +21,8 @@ void main(string[] args)
     if (groupSize != 1)
         writeln("Something's wrong with the parent");
 
-    string processName = info.processName.fromStringZ;
+    import std.string;
+    char[] processName = info.processName.fromStringz;
 
     writeln(
         "Module ", processName, 
@@ -44,13 +45,13 @@ void main(string[] args)
 
     if (info.rank == incepIdkWhatThisIs)
     {
-        mh.send(info.rank, nextRank(), tag);
+        mh.send(&info.rank, nextRank(), tag);
         mh.recv(&receiveBuffer, prevRank(), tag, &status);
     }
     else
     {
         mh.recv(&receiveBuffer, prevRank(), tag, &status);
-        mh.send(info.rank, nextRank(), tag);
+        mh.send(&info.rank, nextRank(), tag);
     }
 
     writeln(
