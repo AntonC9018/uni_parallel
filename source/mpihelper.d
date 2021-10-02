@@ -59,27 +59,48 @@ template getMpiType(T)
         enum getMpiType = MPI_INT;
     else static if (is(T == float))
         enum getMpiType = MPI_FLOAT;
-    else static assert(0);
+    else static assert(0, "Type `" ~ T.stringof ~ "` is unsupported");
 }
 
-template UnrolledCall(alias func)
+/// Unrolls a buffer argument (an array or a pointer to an element) 
+/// into a sequence of pointer, length and mpi type.
+template UnrollBuffer(alias buffer)
 {
-    auto UnrolledCall(T, Args...)(T[] thing, Args args)
+    import std.meta : AliasSeq;
+    static if (is(typeof(buffer) : T[], T))
     {
-    	return func(thing.ptr, cast(int) thing.length, getMpiType!T, args);
+        T* ptr() { return buffer.ptr; }
+        int len() { return cast(int) buffer.length; } 
+        alias UnrollBuffer = AliasSeq!(ptr, len, getMpiType!T);
     }
-    auto UnrolledCall(T, Args...)(T* thing, Args args)
+    else static if (is(typeof(buffer) == T*, T))
     {
-    	return func(thing, 1, getMpiType!T, args);
+        auto ptr() { return &buffer; }
+        alias UnrollBuffer = AliasSeq!(ptr, 1, getMpiType!T);
     }
+    else static assert(0, "Type `" ~ typeof(buffer).stringof ~ "` must be a pointer or a slice.");
 }
 
+/// Buffer can be either a slice or a pointer to the single element.
 int send(T)(T buffer, int dest, int tag, MPI_COMM comm = MPI_COMM_WORLD)
 {
-    return UnrolledCall!MPI_Send(buffer, dest, tag, comm);
+    return MPI_Send(UnrollBuffer!buffer, dest, tag, comm);
 }
 
+/// ditto
 int recv(T)(T buffer, int source, int tag, MPI_STATUS* status, MPI_COMM comm = MPI_COMM_WORLD)
 {
-    return UnrolledCall!MPI_Recv(buffer, source, tag, comm, status);
+    return MPI_Recv(UnrollBuffer!buffer, source, tag, comm, status);
+}
+
+/// ditto
+int sendRecv(T, U)(
+    T sendBuffer, int dest, int sendtag, 
+    U recvBuffer, int source, int recvtag, 
+    MPI_Status* status, MPI_COMM comm = MPI_COMM_WORLD)
+{
+    return MPI_Sendrecv(
+        UnrollBuffer!sendBuffer, dest,   sendtag, 
+        UnrollBuffer!recvBuffer, source, recvtag, 
+        comm, status);
 }
