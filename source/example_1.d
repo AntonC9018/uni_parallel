@@ -45,11 +45,11 @@ void main(string[] args)
     if (info.rank == incepIdkWhatThisIs)
     {
         mh.send(info.rank, nextRank(), tag);
-        mh.recv(&receiveBuffer, prevRank(), tag, &status);
+        mh.recv(receiveBuffer, prevRank(), tag, &status);
     }
     else
     {
-        mh.recv(&receiveBuffer, prevRank(), tag, &status);
+        mh.recv(receiveBuffer, prevRank(), tag, &status);
         mh.send(info.rank, nextRank(), tag);
     }
 
