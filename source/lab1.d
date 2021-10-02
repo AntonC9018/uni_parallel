@@ -15,7 +15,7 @@ int main(string[] args)
     scope(exit) mh.finalize();
 
     if (info.rank == 0)
-        printf("\n=====REZULTATUL PROGRAMULUI '%s' \n", info.argv[0]);
+        printf("\n=====REZULTATUL PROGRAMULUI '%s' \n", info.args.argv[0]);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
