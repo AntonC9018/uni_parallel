@@ -162,16 +162,18 @@ int bcast(T)(T buffer, int root, MPI_Comm comm = MPI_COMM_WORLD)
     return MPI_Bcast(UnrollBuffer!buffer, root, comm);
 }
 
+enum gatherTag = 717;
+
 /// https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=237&zoom=180,55,524
-int intraGatherSend(T)(T buffer, int root, int tag, MPI_Comm comm = MPI_COMM_WORLD)
+int intraGatherSend(T)(T buffer, int root, MPI_Comm comm = MPI_COMM_WORLD)
 {
-    return send(buffer, root, tag, comm);
+    return send(buffer, root, gatherTag, comm);
 }
 
 /// This should be called by the root process to receive messages from the processes that called `gatherSend()`
 /// into the buffer. The rank in InitInfo must correspond to the root rank specified in the `gatherSend()` calls.
 /// It will most likely hang infinitely otherwise.
-void intraGatherRecv(T)(T[] buffer, in InitInfo info, int tag, MPI_Comm comm = MPI_COMM_WORLD)
+void intraGatherRecv(T)(T[] buffer, in InitInfo info, MPI_Comm comm = MPI_COMM_WORLD)
 {
     size_t currentReceiveIndex = 0;
     size_t singleReceiveSize = buffer.length / (info.size - 1);
@@ -182,7 +184,7 @@ void intraGatherRecv(T)(T[] buffer, in InitInfo info, int tag, MPI_Comm comm = M
     {
         if (i != info.rank)
         {
-            recv(buffer[currentReceiveIndex .. currentReceiveIndex + singleReceiveSize], i, tag, MPI_STATUS_IGNORE, comm);
+            recv(buffer[currentReceiveIndex .. currentReceiveIndex + singleReceiveSize], i, gatherTag, MPI_STATUS_IGNORE, comm);
             currentReceiveIndex += singleReceiveSize;
         }
     }
