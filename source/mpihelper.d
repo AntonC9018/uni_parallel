@@ -355,7 +355,7 @@ struct Operation(alias operation)
     }
     else
     {
-        enum MPI_Op opHandle = operation;
+        MPI_Op opHandle() { return operation; }
         enum HasRequiredType = false;
     }
 }
@@ -374,18 +374,18 @@ struct Operation(alias operation)
 // MPI_BXOR            bit-wise xor
 // MPI_MAXLOC          max value and location
 // MPI_MINLOC          min value and location
-enum Operation!MPI_MAX       opMax;
-enum Operation!MPI_MIN       opMin;
-enum Operation!MPI_SUM       opSum;
-enum Operation!MPI_PROD      opProd;
-enum Operation!MPI_LAND      opLand;
-enum Operation!MPI_BAND      opBand;
-enum Operation!MPI_LOR       opLor;
-enum Operation!MPI_BOR       opBor;
-enum Operation!MPI_LXOR      opLxor;
-enum Operation!MPI_BXOR      opBxor;
-enum Operation!MPI_MAXLOC    opMaxloc;
-enum Operation!MPI_MINLOC    opMinloc;
+alias    opMax = Operation!MPI_MAX;
+alias    opMin = Operation!MPI_MIN;
+alias    opSum = Operation!MPI_SUM;
+alias   opProd = Operation!MPI_PROD;
+alias   opLand = Operation!MPI_LAND;
+alias   opBand = Operation!MPI_BAND;
+alias    opLor = Operation!MPI_LOR;
+alias    opBor = Operation!MPI_BOR;
+alias   opLxor = Operation!MPI_LXOR;
+alias   opBxor = Operation!MPI_BXOR;
+alias opMaxloc = Operation!MPI_MAXLOC;
+alias opMinloc = Operation!MPI_MINLOC;
 
 auto createOp(alias operation)(int commute) 
 {
