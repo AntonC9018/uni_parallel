@@ -47,7 +47,7 @@ ProcessorName getProcessorName()
 // void barrier() { barrier(MPI_COMM_WORLD); }
 void barrier(MPI_Comm comm = MPI_COMM_WORLD) { MPI_Barrier(comm); }
 
-enum MPI_Datatype INVALID_DATATYPE = -1;
+enum MPI_Datatype INVALID_DATATYPE = null;
 
 // We cannot 
 template Datatype(T)
@@ -292,7 +292,7 @@ int intraScatterRecv(T)(T buffer, int root, MPI_Comm comm = MPI_COMM_WORLD)
 int allgather(T, U)(const(T) sendBuffer, U[] recvBuffer, MPI_Comm comm = MPI_COMM_WORLD) 
 {
     alias sendBufferInfo = BufferInfo!sendBuffer;
-    static assert(__traits(isSame, sendBufferInfo.ElementType, U));
+    static assert(is(sendBufferInfo.ElementType == U));
     return MPI_Allgather(UnrollBuffer!sendBuffer, recvBuffer.ptr, 
         sendBufferInfo.length, sendBufferInfo.datatype, comm);
 }
@@ -301,7 +301,7 @@ int allgather(T, U)(const(T) sendBuffer, U[] recvBuffer, MPI_Comm comm = MPI_COM
 int allgatherAlloc(T, U)(const(T) sendBuffer, out U[] recvBuffer, int groupSize, MPI_Comm comm = MPI_COMM_WORLD) 
 {
     alias sendBufferInfo = BufferInfo!sendBuffer;
-    static assert(__traits(isSame, sendBufferInfo.ElementType, U));
+    static assert(is(sendBufferInfo.ElementType == U));
     recvBuffer = new U[](groupSize * sendBufferInfo.length);
     return MPI_Allgather(UnrollBuffer!sendBuffer, recvBuffer.ptr, 
         sendBufferInfo.length, sendBufferInfo.datatype, comm);
@@ -327,7 +327,7 @@ template OperationInfo(alias operation)
             return operation(cast(T*) invec, cast(T*) inoutvec, *length);
         }
     }
-    else static if (is(typeof(&operation) : void function(T*, T*, int), T))
+    else static if (is(typeof(&operation) : void function(T[], T[]), T))
     {
         enum HasRequiredType = true;
         alias RequiredType = T;
@@ -421,7 +421,6 @@ int freeOp(Op)(Op op)
 int intraReduce(T, Op)(T buffer, Op op, int root, MPI_Comm comm = MPI_COMM_WORLD)
 {
     alias bufferInfo = BufferInfo!buffer;
-    static if (Op.HasRequiredType)
-        static assert(is(bufferInfo.ElementType == Op.RequiredType));
+    static assert(!Op.HasRequiredType || is(bufferInfo.ElementType == Op.RequiredType));
     return MPI_Reduce(bufferInfo.ptr, MPI_IN_PLACE, bufferInfo.length, bufferInfo.datatype, op.handle, root, comm);
 }
