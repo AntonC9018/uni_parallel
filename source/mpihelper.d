@@ -155,3 +155,71 @@ int sendRecv(T, U)(
         UnrollBuffer!recvBuffer, source, recvtag, 
         comm, status);
 }
+
+/// ditto
+int bcast(T)(T buffer, int root, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    return MPI_Bcast(UnrollBuffer!buffer, root, comm);
+}
+
+/// https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=237&zoom=180,55,524
+int intraGatherSend(T)(T buffer, int root, int tag, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    return send(buffer, root, tag, comm);
+}
+
+/// This should be called by the root process to receive messages from the processes that called `gatherSend()`
+/// into the buffer. The rank in InitInfo must correspond to the root rank specified in the `gatherSend()` calls.
+/// It will most likely hang infinitely otherwise.
+void intraGatherRecv(T)(T[] buffer, in InitInfo info, int tag, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    size_t currentReceiveIndex = 0;
+    size_t singleReceiveSize = buffer.length / (info.size - 1);
+
+    assert(buffer.sizeof >= singleReceiveSize);
+
+    foreach (i; info.size)
+    {
+        if (i != info.rank)
+        {
+            recv(buffer[currentReceiveIndex .. currentReceiveIndex + singleReceiveSize], i, tag, MPI_STATUS_IGNORE, comm);
+            currentReceiveIndex += singleReceiveSize;
+        }
+    }
+} 
+
+/// This is a stupid function because it assumes non-root processes also allocate the array
+/// which is just wrong. But otherwise it makes all processes compute what the root would compute.
+/// Gather is just meaningless imo.
+int gather(T, U)(T sendBuffer, U[] recvBuffer, int root, int groupSize, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    alias sendBufferTuple = UnrollBuffer!sendBuffer;
+    
+    // Make sure the recv buffer can hold all input of all processes combined.
+    assert(recvBuffer.length / groupSize >= sendBufferTuple[1]);
+    // The types must match.
+    static assert(__traits(isSame, sendBufferTuple[2], Datatype!U));
+
+    return MPI_Gather(sendBufferTuple, recvBuffer.ptr, sendBufferTuple[1], sendBufferTuple[2], root, comm);
+}
+
+/// This is stupid since one parameter is superfluous most of the time.
+int gatherAlternative(T)(T[] sendBuffer, T[] nullOrReceive, int targetRoot, in InitInfo info, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    if (targetRoot == info.rank)
+    {
+        // Must be receiving.
+        assert(nullOrReceive);
+        assert(nullOrReceive.length == sendBuffer.length * info.size);
+
+        return MPI_Gather(
+            sendBuffer.ptr,    sendBuffer.length, Datatype!T, 
+            nullOrReceive.ptr, sendBuffer.length, Datatype!T,
+            root, comm);
+    }
+    assert(!nullOrReceive);
+    return MPI_Gather(
+        sendBuffer.ptr, sendBuffer.length, Datatype!T,
+        null,           sendBuffer.length, Datatype!T,
+        root, comm);
+}
