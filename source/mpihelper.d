@@ -203,21 +203,20 @@ int gather(T, U)(T sendBuffer, U[] recvBuffer, int root, int groupSize, MPI_Comm
     return MPI_Gather(sendBufferTuple, recvBuffer.ptr, sendBufferTuple[1], sendBufferTuple[2], root, comm);
 }
 
+/// `nullOrReceive` must be the size of the communicator group if `root == myrank`, otherwise it can be null.
 /// This is stupid since one parameter is superfluous most of the time.
-int gatherAlternative(T)(T[] sendBuffer, T[] nullOrReceive, int targetRoot, in InitInfo info, MPI_Comm comm = MPI_COMM_WORLD)
+int gatherAlternative(T)(T[] sendBuffer, T[] nullOrReceive, int root, int myrank, MPI_Comm comm = MPI_COMM_WORLD)
 {
-    if (targetRoot == info.rank)
+    if (root == myrank)
     {
         // Must be receiving.
         assert(nullOrReceive);
-        assert(nullOrReceive.length == sendBuffer.length * info.size);
 
         return MPI_Gather(
             sendBuffer.ptr,    sendBuffer.length, Datatype!T, 
             nullOrReceive.ptr, sendBuffer.length, Datatype!T,
             root, comm);
     }
-    assert(!nullOrReceive);
     return MPI_Gather(
         sendBuffer.ptr, sendBuffer.length, Datatype!T,
         null,           sendBuffer.length, Datatype!T,
