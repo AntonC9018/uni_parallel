@@ -223,6 +223,9 @@ int gatherNoAlloc(T)(T[] sendBuffer, T[] nullOrReceive, int root, int myrank, MP
     }
     return MPI_Gather(
         sendBuffer.ptr, sendBuffer.length, Datatype!T,
+        // TODO: this should work with dummy values too, i.e. zeros.
+        // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=236&zoom=180,65,600
+        // "significant only at root".
         null,           sendBuffer.length, Datatype!T,
         root, comm);
 }
