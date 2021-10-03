@@ -399,18 +399,26 @@ int freeOp(Op)(Op op)
     return MPI_Op_free(&(op.handle));
 }
 
-/// Op must be duck-compatible with Operation!func.
-int intraReduceSend(T, Op)(T buffer, Op op, int root, MPI_Comm comm = MPI_COMM_WORLD)
-{
-    alias bufferInfo = BufferInfo!buffer;
-    static if (Op.HasRequiredType)
-        static assert(is(bufferInfo.ElementType == Op.RequiredType));
-    return MPI_Reduce(bufferInfo.ptr, null, bufferInfo.length, bufferInfo.datatype, op.handle, root, comm);
-}
+// /// Op must be duck-compatible with Operation!func.
+// int intraReduceSend(T, Op)(T buffer, Op op, int root, MPI_Comm comm = MPI_COMM_WORLD)
+// {
+//     alias bufferInfo = BufferInfo!buffer;
+//     static if (Op.HasRequiredType)
+//         static assert(is(bufferInfo.ElementType == Op.RequiredType));
+//     return MPI_Reduce(bufferInfo.ptr, null, bufferInfo.length, bufferInfo.datatype, op.handle, root, comm);
+// }
+
+// /// Must be called by root.
+// int intraReduceRecv(T, Op)(T buffer, Op op, int root, MPI_Comm comm = MPI_COMM_WORLD)
+// {
+//     alias bufferInfo = BufferInfo!buffer;
+//     static if (Op.HasRequiredType)
+//         static assert(is(bufferInfo.ElementType == Op.RequiredType));
+//     return MPI_Reduce(bufferInfo.ptr, MPI_IN_PLACE, bufferInfo.length, bufferInfo.datatype, op.handle, root, comm);
+// }
 
 /// Op must be duck-compatible with Operation!func.
-/// Must be called by root.
-int intraReduceRecv(T, Op)(T buffer, Op op, int root, MPI_Comm comm = MPI_COMM_WORLD)
+int intraReduce(T, Op)(T buffer, Op op, int root, MPI_Comm comm = MPI_COMM_WORLD)
 {
     alias bufferInfo = BufferInfo!buffer;
     static if (Op.HasRequiredType)
