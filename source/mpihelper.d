@@ -115,23 +115,31 @@ void createDatatype(T)() if (is(T == struct))
     MPI_Type_commit(&(Datatype!T));
 }
 
+template BufferInfo(alias buffer)
+{
+    static if (is(typeof(buffer) : T[], T))
+    {
+        T* ptr() { return buffer.ptr; }
+        int length() { return cast(int) buffer.length; }
+    }
+    else static if (is(typeof(buffer) == T*, T))
+    {
+        T* ptr() { return buffer; }
+        int length() { return 1; }
+    }
+    else static assert(0, "Type `" ~ typeof(buffer).stringof ~ "` must be a pointer or a slice.");
+    
+    alias ElementType = typeof(buffer[0]);
+    auto datatype() { return getDatatypeId!ElementType; }
+}
+
 /// Unrolls a buffer argument (an array or a pointer to an element) 
 /// into a sequence of pointer, length and mpi type.
 template UnrollBuffer(alias buffer)
 {
+    alias Info = BufferInfo!buffer;
     import std.meta : AliasSeq;
-    static if (is(typeof(buffer) : T[], T))
-    {
-        T* ptr() { return buffer.ptr; }
-        int len() { return cast(int) buffer.length; } 
-        alias UnrollBuffer = AliasSeq!(ptr, len, getDatatypeId!T);
-    }
-    else static if (is(typeof(buffer) == T*, T))
-    {
-        auto ptr() { return &buffer; }
-        alias UnrollBuffer = AliasSeq!(ptr, 1, getDatatypeId!T);
-    }
-    else static assert(0, "Type `" ~ typeof(buffer).stringof ~ "` must be a pointer or a slice.");
+    alias UnrollBuffer = AliasSeq!(Info.ptr, Info.length, Info.datatype); 
 }
 
 /// Buffer can be either a slice or a pointer to the single element.
@@ -197,36 +205,39 @@ void intraGatherRecv(T)(T[] buffer, in InitInfo info, MPI_Comm comm = MPI_COMM_W
 /// Gather is just meaningless imo.
 int gather(T, U)(T sendBuffer, U[] recvBuffer, int root, int groupSize, MPI_Comm comm = MPI_COMM_WORLD)
 {
-    alias sendBufferTuple = UnrollBuffer!sendBuffer;
+    alias sendBufferInfo = BufferInfo!sendBuffer;
     
     // Make sure the recv buffer can hold all input of all processes combined.
-    assert(recvBuffer.length / groupSize >= sendBufferTuple[1]);
+    assert(recvBuffer.length / groupSize >= sendBufferInfo.length);
     // The types must match.
-    static assert(__traits(isSame, sendBufferTuple[2], Datatype!U));
+    static assert(__traits(isSame, sendBufferInfo.datatype, Datatype!U));
 
-    return MPI_Gather(sendBufferTuple, recvBuffer.ptr, sendBufferTuple[1], sendBufferTuple[2], root, comm);
+    return MPI_Gather(UnrollBuffer!sendBuffer, recvBuffer.ptr, sendBufferInfo.length, sendBufferInfo.datatype, root, comm);
 }
 
 /// `nullOrReceive` must be the size of the communicator group if `root == myrank`, otherwise it can be null.
 /// This is stupid since one parameter is superfluous most of the time.
-int gatherNoAlloc(T)(T[] sendBuffer, T[] nullOrReceive, int root, int myrank, MPI_Comm comm = MPI_COMM_WORLD)
+int gatherNoAlloc(T, U)(T sendBuffer, U[] nullOrReceive, int root, int myrank, MPI_Comm comm = MPI_COMM_WORLD)
 {
+    alias sendBufferInfo = BufferInfo!sendBuffer;
+    static assert(__traits(isSame, sendBufferInfo.datatype, Datatype!U));
+
     if (root == myrank)
     {
         // Must be receiving.
         assert(nullOrReceive);
 
         return MPI_Gather(
-            sendBuffer.ptr,    sendBuffer.length, Datatype!T, 
-            nullOrReceive.ptr, sendBuffer.length, Datatype!T,
+            sendBufferInfo.ptr, sendBufferInfo.length, Datatype!T, 
+            nullOrReceive.ptr,  sendBufferInfo.length, Datatype!T,
             root, comm);
     }
     return MPI_Gather(
-        sendBuffer.ptr, sendBuffer.length, Datatype!T,
+        sendBufferInfo.ptr, sendBufferInfo.length, Datatype!T,
         // TODO: this should work with dummy values too, i.e. zeros.
         // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=236&zoom=180,65,600
         // "significant only at root".
-        null,           sendBuffer.length, Datatype!T,
+        null, sendBufferInfo.length, Datatype!T,
         root, comm);
 }
 
@@ -236,25 +247,41 @@ int gatherNoAlloc(T)(T[] sendBuffer, T[] nullOrReceive, int root, int myrank, MP
 //         alias ElementType = E;
 //     else static assert(0);
 // }
-
-template ElementType(alias buffer)
-{
-    alias ElementType = typeof(buffer[0]);
-}
+// template ElementType(alias buffer)
+// {
+//     alias ElementType = typeof(buffer[0]);
+// }
 
 /// Allocates `receiveBuffer` if `root` == the rank of the current process. 
 /// Executes gather after that. This function makes it impossible to make mistakes with the size of the buffer.
 /// If the buffer is already allocated, prefer `gatherNoAlloc()`.
 int gatherWithAlloc(T, U)(T sendBuffer, out U[] receiveBuffer, int root, in InitInfo info, MPI_Comm comm = MPI_COMM_WORLD)
 {
-    static assert(__traits(isSame, ElementType!sendBuffer, U));
-    alias sendTuple = UnrollBuffer!sendBuffer;
+    alias sendBufferInfo = BufferInfo!sendBuffer;
+    static assert(__traits(isSame, sendBufferInfo.ElementType, U));
 
     if (root == info.rank)
     {
-        receiveBuffer = new U[](sendTuple[1] * info.size);
-        return MPI_Gather(sendTuple, receiveBuffer.ptr, sendTuple[1], sendTuple[2], root, comm);
+        receiveBuffer = new U[](sendBufferInfo.length * info.size);
+        return MPI_Gather(UnrollBuffer!sendBuffer, 
+            receiveBuffer.ptr, sendBufferInfo.length, sendBufferInfo.datatype, 
+            root, comm);
     }
 
-    return MPI_Gather(sendTuple, null, sendTuple[1], sendTuple[2], root, comm);
+    return MPI_Gather(UnrollBuffer!sendBuffer, null, sendBufferInfo.length, sendBufferInfo.datatype, root, comm);
+}
+
+
+/// Does an inplace scatter as the root process - the process' share of buffer is left in the buffer
+int intraScatterSend(T)(T buffer, in InitInfo info, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    alias sendBufferInfo = BufferInfo!buffer;
+    return MPI_Scatter(sendBufferInfo.ptr, sendBufferInfo.length / info.size, sendBufferInfo.datatype,
+        MPI_IN_PLACE, 0, null, info.rank, comm);
+}
+
+/// Receives data from the root process using MPI_Scatter
+int intraScatterRecv(T)(T buffer, int root, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    return MPI_Scatter(null, 0, null, UnrollBuffer!buffer, root, comm);
 }
