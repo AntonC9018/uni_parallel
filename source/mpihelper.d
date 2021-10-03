@@ -285,3 +285,24 @@ int intraScatterRecv(T)(T buffer, int root, MPI_Comm comm = MPI_COMM_WORLD)
 {
     return MPI_Scatter(null, 0, null, UnrollBuffer!buffer, root, comm);
 }
+
+/// Gets data from all processes into the `recvBuffer` using MPI_Allgather.
+/// The buffer is assumed to be long enough to hold data gathered form all other processes,
+/// more precisely, `sendBuffer.length * groupSize`.
+int allgather(T, U)(T sendBuffer, U[] recvBuffer, MPI_Comm comm = MPI_COMM_WORLD) 
+{
+    alias sendBufferInfo = BufferInfo!sendBuffer;
+    static assert(__traits(isSame, sendBufferInfo.ElementType, U));
+    return MPI_Allgather(UnrollBuffer!sendBuffer, recvBuffer.ptr, 
+        sendBufferInfo.length, sendBufferInfo.datatype, comm);
+}
+
+/// Gets data from all processes into `recvBuffer`, returned as the second argument.
+int allgatherAlloc(T, U)(T sendBuffer, out U[] recvBuffer, int groupSize, MPI_Comm comm = MPI_COMM_WORLD) 
+{
+    alias sendBufferInfo = BufferInfo!sendBuffer;
+    static assert(__traits(isSame, sendBufferInfo.ElementType, U));
+    recvBuffer = new U[](groupSize * sendBufferInfo.length);
+    return MPI_Allgather(UnrollBuffer!sendBuffer, recvBuffer.ptr, 
+        sendBufferInfo.length, sendBufferInfo.datatype, comm);
+}
