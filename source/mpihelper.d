@@ -78,6 +78,7 @@ auto getDatatypeId(T)()
 void createDatatype(T : TElement[N], TElement, size_t N)()
 {
     MPI_Type_contiguous(cast(int) N, Datatype!TElement, &(Datatype!T));
+    MPI_Type_commit(&(Datatype!T));
 }
 
 void createDatatype(T)() if (is(T == struct))
@@ -111,6 +112,7 @@ void createDatatype(T)() if (is(T == struct))
     }}
 
     MPI_Type_create_struct(cast(int) T.tupleof.length, counts.ptr, offsets.ptr, datatypes.ptr, &(Datatype!T));
+    MPI_Type_commit(&(Datatype!T));
 }
 
 /// Unrolls a buffer argument (an array or a pointer to an element) 
