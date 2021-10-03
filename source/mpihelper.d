@@ -47,14 +47,70 @@ ProcessorName getProcessorName()
 // void barrier() { barrier(MPI_COMM_WORLD); }
 void barrier(MPI_Comm comm = MPI_COMM_WORLD) { MPI_Barrier(comm); }
 
+enum MPI_Datatype INVALID_DATATYPE = -1;
 
-template getMpiType(T)
+// We cannot 
+template Datatype(T)
 {
     static if (is(T == int))
-        alias getMpiType = MPI_INT;
+        alias Datatype = MPI_INT;
     else static if (is(T == float))
-        alias getMpiType = MPI_FLOAT;
-    else static assert(0, "Type `" ~ T.stringof ~ "` is unsupported");
+        alias Datatype = MPI_FLOAT;
+    else static if (is(T == double))
+        alias Datatype = MPI_DOUBLE;
+    else static if (IsCustomDatatype!T)
+    {
+        __gshared MPI_Datatype Datatype = INVALID_DATATYPE;
+    }
+    else static assert(0);
+}
+
+enum IsCustomDatatype(T) = is(T : TElement[N], TElement, size_t N) || is(T == struct);
+enum IsValidDatatype(T) = is(T : int) || is(T : double) || IsCustomDatatype!T;
+
+// Must have a getter to allow AliasSeq to work.
+auto getDatatypeId(T)()
+{
+    assert(Datatype!T != INVALID_DATATYPE);
+    return Datatype!T;
+}
+
+void createDatatype(T : TElement[N], TElement, size_t N)()
+{
+    MPI_Type_contiguous(cast(int) N, Datatype!TElement, &(Datatype!T));
+}
+
+void createDatatype(T)() if (is(T == struct))
+{
+    assert(Datatype!T == INVALID_DATATYPE);
+
+    // We fill these completely in all cases.
+    int[T.tupleof.length] counts = void;
+    MPI_Aint[T.tupleof.length] offsets = void;
+    MPI_Datatype[T.tupleof.length] datatypes = void;
+
+    size_t index = 0;
+    static foreach (t; T.tupleof)
+    {{
+        alias typeId = Datatype!(typeof(t));
+
+        // If it's not a builtin type, create the type.
+        // I'm not sure if I should do it like this or not.
+        // Another thing, circular dependencies are obviously not allowed.
+        static if (IsCustomDatatype!T)
+        {
+            if (typeId == INVALID_DATATYPE)
+                .createDatatype!(typeof(t));
+            assert(typeId != INVALID_DATATYPE);
+        }
+
+        datatypes[index] = typeId;
+        offsets[index] = cast(MPI_Aint) t.offsetof;
+        counts[index] = 1;
+        index++;
+    }}
+
+    MPI_Type_create_struct(cast(int) T.tupleof.length, counts.ptr, offsets.ptr, datatypes.ptr, &(Datatype!T));
 }
 
 /// Unrolls a buffer argument (an array or a pointer to an element) 
@@ -66,12 +122,12 @@ template UnrollBuffer(alias buffer)
     {
         T* ptr() { return buffer.ptr; }
         int len() { return cast(int) buffer.length; } 
-        alias UnrollBuffer = AliasSeq!(ptr, len, getMpiType!T);
+        alias UnrollBuffer = AliasSeq!(ptr, len, getDatatypeId!T);
     }
     else static if (is(typeof(buffer) == T*, T))
     {
         auto ptr() { return &buffer; }
-        alias UnrollBuffer = AliasSeq!(ptr, 1, getMpiType!T);
+        alias UnrollBuffer = AliasSeq!(ptr, 1, getDatatypeId!T);
     }
     else static assert(0, "Type `" ~ typeof(buffer).stringof ~ "` must be a pointer or a slice.");
 }
