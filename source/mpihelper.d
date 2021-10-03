@@ -289,7 +289,7 @@ int intraScatterRecv(T)(T buffer, int root, MPI_Comm comm = MPI_COMM_WORLD)
 /// Gets data from all processes into the `recvBuffer` using MPI_Allgather.
 /// The buffer is assumed to be long enough to hold data gathered form all other processes,
 /// more precisely, `sendBuffer.length * groupSize`.
-int allgather(T, U)(T sendBuffer, U[] recvBuffer, MPI_Comm comm = MPI_COMM_WORLD) 
+int allgather(T, U)(const(T) sendBuffer, U[] recvBuffer, MPI_Comm comm = MPI_COMM_WORLD) 
 {
     alias sendBufferInfo = BufferInfo!sendBuffer;
     static assert(__traits(isSame, sendBufferInfo.ElementType, U));
@@ -298,11 +298,122 @@ int allgather(T, U)(T sendBuffer, U[] recvBuffer, MPI_Comm comm = MPI_COMM_WORLD
 }
 
 /// Gets data from all processes into `recvBuffer`, returned as the second argument.
-int allgatherAlloc(T, U)(T sendBuffer, out U[] recvBuffer, int groupSize, MPI_Comm comm = MPI_COMM_WORLD) 
+int allgatherAlloc(T, U)(const(T) sendBuffer, out U[] recvBuffer, int groupSize, MPI_Comm comm = MPI_COMM_WORLD) 
 {
     alias sendBufferInfo = BufferInfo!sendBuffer;
     static assert(__traits(isSame, sendBufferInfo.ElementType, U));
     recvBuffer = new U[](groupSize * sendBufferInfo.length);
     return MPI_Allgather(UnrollBuffer!sendBuffer, recvBuffer.ptr, 
         sendBufferInfo.length, sendBufferInfo.datatype, comm);
+}
+
+template OperationInfo(alias operation)
+{
+    static if (is(typeof(&operation) : void function(T*, T*, int*), T))
+    {
+        enum HasRequiredType = true;
+        alias RequiredType = T;
+        static void func(void* invec, void* inoutvec, int* length, MPI_Datatype* datatype)
+        {
+            return operation(cast(T*) invec, cast(T*) inoutvec, length);
+        }
+    }
+    else static if (is(typeof(&operation) : void function(T*, T*, int), T))
+    {
+        enum HasRequiredType = true;
+        alias RequiredType = T;
+        static void func(void* invec, void* inoutvec, int* length, MPI_Datatype* datatype)
+        {
+            return operation(cast(T*) invec, cast(T*) inoutvec, *length);
+        }
+    }
+    else static if (is(typeof(&operation) : void function(T*, T*, int), T))
+    {
+        enum HasRequiredType = true;
+        alias RequiredType = T;
+        static void func(void* invec, void* inoutvec, int* length, MPI_Datatype* datatype)
+        {
+            return operation((cast(T*) invec)[0..*length], (cast(T*) inoutvec)[0..*length]);
+        }
+    }
+    else
+    {
+        enum HasRequiredType = false;
+        static void func(void* invec, void* inoutvec, int* length, MPI_Datatype* datatype)
+        {
+            return operation(invec, inoutvec, length, datatype);
+        }
+    }
+}
+
+struct Operation(alias operation)
+{
+    static if (is(operation == function))
+    {
+        MPI_Op opHandle;
+        mixin OperationInfo!operation;
+    }
+    else
+    {
+        enum MPI_Op opHandle = operation;
+        enum HasRequiredType = false;
+    }
+}
+
+
+// https://www.open-mpi.org/doc/v3.0/man3/MPI_Reduce_local.3.php
+// MPI_MAX             maximum
+// MPI_MIN             minimum
+// MPI_SUM             sum
+// MPI_PROD            product
+// MPI_LAND            logical and
+// MPI_BAND            bit-wise and
+// MPI_LOR             logical or
+// MPI_BOR             bit-wise or
+// MPI_LXOR            logical xor
+// MPI_BXOR            bit-wise xor
+// MPI_MAXLOC          max value and location
+// MPI_MINLOC          min value and location
+enum Operation!MPI_MAX       opMax;
+enum Operation!MPI_MIN       opMin;
+enum Operation!MPI_SUM       opSum;
+enum Operation!MPI_PROD      opProd;
+enum Operation!MPI_LAND      opLand;
+enum Operation!MPI_BAND      opBand;
+enum Operation!MPI_LOR       opLor;
+enum Operation!MPI_BOR       opBor;
+enum Operation!MPI_LXOR      opLxor;
+enum Operation!MPI_BXOR      opBxor;
+enum Operation!MPI_MAXLOC    opMaxloc;
+enum Operation!MPI_MINLOC    opMinloc;
+
+auto createOp(alias operation)(int commute) 
+{
+    Operation!operation op;
+    MPI_Op_create(&(op.func), commute, &(op.handle));
+    return op;
+}
+
+int freeOp(Op)(Op op)
+{
+    return MPI_Op_free(&(op.handle));
+}
+
+/// Op must be duck-compatible with Operation!func.
+int intraReduceSend(T, Op)(T buffer, Op op, int root, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    alias bufferInfo = BufferInfo!buffer;
+    static if (Op.HasRequiredType)
+        static assert(is(bufferInfo.ElementType == Op.RequiredType));
+    return MPI_Reduce(bufferInfo.ptr, null, bufferInfo.length, bufferInfo.datatype, op.handle, root, comm);
+}
+
+/// Op must be duck-compatible with Operation!func.
+/// Must be called by root.
+int intraReduceRecv(T, Op)(T buffer, Op op, int root, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    alias bufferInfo = BufferInfo!buffer;
+    static if (Op.HasRequiredType)
+        static assert(is(bufferInfo.ElementType == Op.RequiredType));
+    return MPI_Reduce(bufferInfo.ptr, MPI_IN_PLACE, bufferInfo.length, bufferInfo.datatype, op.handle, root, comm);
 }
