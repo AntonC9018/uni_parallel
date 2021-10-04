@@ -567,3 +567,153 @@ auto matrixFromArray(T)(T[] array, size_t width)
 
 Am mai definit niște teste, pentru a mă asigura că lucrează corect.
 Vedeți [codul pe github](https://github.com/AntonC9018/uni_parallel/blob/26831202b5a3c6e6d7e6ebba3e69c8f19c571886/source/lab1.d#L97-L181), nu-l plasez aici.
+Am mai modificat codul ceva nesemnificativ, tot nu inserez aici.
+
+
+Acum voi scrie codul care ar opera pe așa matrice arbitrară, selectând indicele minimului după coloanele într-un tablou, zicem dinamic, pentru fiecare coloană.
+
+Voi face acest lucru în stilul TDD (Test Driven Development).
+Avem cetințe concrete, deci putem scrie un unit test.
+
+```d
+size_t[][] getIndicesOfMinInColumns(M)(ref const(M))
+{
+    return null;
+}
+unittest
+{
+    Matrix!int m = matrixFromArray([ 1, 2, 3,
+                                     4, 5, 6,
+                                     1, 2, 3, ], 3);
+    auto indices = getIndicesOfMinInColumns(m);
+
+    assert(indices.length == 3);
+    foreach (i; 0..3)
+        assert(indices[i][] == [0, 1]); 
+}
+```
+
+Acum încercăm să satisfacem testul. Voi face cea mai simplă implementarea posibilă.
+Deja putem scrie cod verificând dacă lucrează apasând butonul care face testarea (l-am setat la F5).
+
+```d
+size_t[][] getIndicesOfMinInColumns(M)(ref const(M) matrix)
+{
+    auto result = new size_t[][](matrix.width);
+    if (matrix.height == 0)
+        return result;
+
+    foreach (columnIndex; 0 .. matrix.width)
+    {
+        result[columnIndex] = [0];
+        // `cast()` scoate `const` de la element
+        auto minElement = cast() matrix[0, columnIndex];
+        foreach (rowIndex; 1 .. matrix.height)
+        {
+            auto element = matrix[rowIndex, columnIndex];
+            if (element < minElement)
+            {
+                result[columnIndex][0] = rowIndex;
+                result[columnIndex].length = 1;
+                minElement = element;
+            }
+            else if (minElement == element)
+            {
+                result[columnIndex] ~= rowIndex;
+            }
+        }
+    }
+    return result;
+}
+```
+
+Codul este foarte ușor de înțeles. 
+Am hotărât să solicit ca numărul de elemente în coloana să fie mai mare ca 0, începând calculările cu 0.
+
+Acum facem o funcție ce returnează un singur indice ce indică prima apariție a maximului.
+
+```d
+size_t[] getIndexOfFirstMinInColumns(M)(ref const(M) matrix)
+{
+    auto result = new size_t[](matrix.width);
+    if (matrix.height == 0)
+        return result;
+        
+    foreach (columnIndex; 0 .. matrix.width)
+    {
+        result[columnIndex] = 0;
+        auto minElement = cast() matrix[0, columnIndex];
+        foreach (rowIndex; 1 .. matrix.height)
+        {
+            auto element = matrix[rowIndex, columnIndex];
+            if (element < minElement)
+            {
+                result[columnIndex] = rowIndex;
+                minElement = element;
+            }
+        }
+    }
+    return result;
+}
+unittest
+{
+    Matrix!int m = matrixFromArray([ 1, 2, 3,
+                                     4, 5, 6,
+                                     1, 2, 3, ], 3);
+    auto indices = getIndicesOfMinInColumns(m);
+
+    assert(indices.length == 3);
+    foreach (i; 0..3)
+        assert(indices[i] == 0); 
+}
+```
+
+Aici de fapt s-ar putea folosi și ceva mai interesant, de exemplu `Range`-urile și `std.algorithm`.
+Citiți dacă este interesant. În scurt, ele permit iterarea leneșă.
+
+Acum vom face o funcție ce mișcă acești indici în "coordonatele globale".
+Mai necesită niște teste, însă testul propus simplu lucrează corect.
+Încă o problemă este că accesează `_rowRange` ce după design probabil trebuie să fie privat, însă vom vedea și vom schimba aceasta după necesitate. 
+
+```d
+struct IndexPair
+{
+    size_t row;
+    size_t col;
+}
+
+IndexPair[] getGlobalIndices(M : Matrix!(T, Transposed), T, bool Transposed)(size_t[] indices, ref const(M) matrix)
+{
+    auto result = new IndexPair[](indices.length);
+    foreach (colIndex, rowIndex; indices)
+    {
+        if (Transposed)
+            swap(colIndex, rowIndex);
+        result[colIndex].row = matrix._rowRange[0] + rowIndex;
+        result[colIndex].col = matrix._colRange[0] + colIndex;
+    }
+    return result;
+}
+
+unittest
+{
+    Matrix!int m = matrixFromArray([ 1, 2, 3,
+                                     4, 5, 6,
+                                     1, 2, 3, ], 3);
+    // [  5, 6,
+    //    2, 3,  ]
+    Matrix!int shifted = m[1..$, 1..$];
+
+    auto indices = getIndexOfFirstMinInColumns(shifted);
+
+    assert(indices.length == 2);
+    assert(indices[0] == 1);
+    assert(indices[1] == 1);
+
+    auto globalIndices = getGlobalIndices(indices, shifted);
+
+    assert(globalIndices.length == 2);
+    assert(globalIndices[0] == IndexPair(2, 1));
+    assert(globalIndices[1] == IndexPair(2, 2));
+}
+```

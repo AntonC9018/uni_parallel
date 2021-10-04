@@ -1,13 +1,139 @@
+// import mpi;
+// import mpihelper = mh;
+
+// void main(string[] args)
+// {
+    
+// }
+
+size_t[][] getIndicesOfMinInColumns(M)(ref const(M) matrix)
+{
+    auto result = new size_t[][](matrix.width);
+    if (matrix.height == 0)
+        return result;
+
+    foreach (columnIndex; 0 .. matrix.width)
+    {
+        result[columnIndex] = [0];
+        auto minElement = cast() matrix[0, columnIndex];
+        foreach (rowIndex; 1 .. matrix.height)
+        {
+            auto element = matrix[rowIndex, columnIndex];
+            if (element < minElement)
+            {
+                result[columnIndex][0] = rowIndex;
+                result[columnIndex].length = 1;
+                minElement = element;
+            }
+            else if (minElement == element)
+            {
+                result[columnIndex] ~= rowIndex;
+            }
+        }
+    }
+    return result;
+}
+unittest
+{
+    Matrix!int m = matrixFromArray([ 1, 2, 3,
+                                     4, 5, 6,
+                                     1, 2, 3, ], 3);
+    auto indices = getIndicesOfMinInColumns(m);
+
+    assert(indices.length == 3);
+    foreach (i; 0..3)
+        assert(indices[i][] == [0, 2]); 
+}
+
+size_t[] getIndexOfFirstMinInColumns(M)(ref const(M) matrix)
+{
+    auto result = new size_t[](matrix.width);
+    if (matrix.height == 0)
+        return result;
+        
+    foreach (columnIndex; 0 .. matrix.width)
+    {
+        result[columnIndex] = 0;
+        auto minElement = cast() matrix[0, columnIndex];
+        foreach (rowIndex; 1 .. matrix.height)
+        {
+            auto element = matrix[rowIndex, columnIndex];
+            if (element < minElement)
+            {
+                result[columnIndex] = rowIndex;
+                minElement = element;
+            }
+        }
+    }
+    return result;
+}
+unittest
+{
+    Matrix!int m = matrixFromArray([ 1, 2, 3,
+                                     4, 5, 6,
+                                     1, 2, 3, ], 3);
+    auto indices = getIndexOfFirstMinInColumns(m);
+
+    assert(indices.length == 3);
+    foreach (i; 0..3)
+        assert(indices[i] == 0); 
+}
+
+
+struct IndexPair
+{
+    size_t row;
+    size_t col;
+}
+
+IndexPair[] getGlobalIndices(M : Matrix!(T, Transposed), T, bool Transposed)(size_t[] indices, ref const(M) matrix)
+{
+    auto result = new IndexPair[](indices.length);
+    foreach (colIndex, rowIndex; indices)
+    {
+        if (Transposed)
+            swap(colIndex, rowIndex);
+        result[colIndex].row = matrix._rowRange[0] + rowIndex;
+        result[colIndex].col = matrix._colRange[0] + colIndex;
+    }
+    return result;
+}
+
+unittest
+{
+    Matrix!int m = matrixFromArray([ 1, 2, 3,
+                                     4, 5, 6,
+                                     1, 2, 3, ], 3);
+    // [  5, 6,
+    //    2, 3,  ]
+    Matrix!int shifted = m[1..$, 1..$];
+
+    auto indices = getIndexOfFirstMinInColumns(shifted);
+
+    assert(indices.length == 2);
+    assert(indices[0] == 1);
+    assert(indices[1] == 1);
+
+    auto globalIndices = getGlobalIndices(indices, shifted);
+
+    assert(globalIndices.length == 2);
+    assert(globalIndices[0] == IndexPair(2, 1));
+    assert(globalIndices[1] == IndexPair(2, 2));
+}
+
+
+
 struct Range
 {
     size_t[2] arrayof;
     alias arrayof this;
-
-    size_t length() const { return arrayof[1] - arrayof[0] + 1; }
-    bool contains(size_t a) const { return a >= arrayof[0] && a <= arrayof[1]; }
-    bool contains(Range a) const { return a[0] >= arrayof[0] && a[1] <= arrayof[1]; }
     
-    Range opBinary(string op, R)(const auto ref R rhs) const
+    const:
+    size_t length() { return arrayof[1] - arrayof[0] + 1; }
+    bool contains(size_t a) { return a >= arrayof[0] && a <= arrayof[1]; }
+    bool contains(Range a) { return a[0] >= arrayof[0] && a[1] <= arrayof[1]; }
+    
+    Range opBinary(string op, R)(const auto ref R rhs)
     {
         mixin(`return Range([arrayof[0] `~op~` rhs[0], arrayof[1] `~op~` rhs[1]]);`);
     }
@@ -91,7 +217,7 @@ struct Matrix(T, bool Transposed = false)
 Matrix!T matrixFromArray(T)(T[] array, size_t width)
 {
     auto height = array.length / width;
-    return Matrix!T(array.ptr, width, height, Range([0, height]), Range([0, width]));
+    return Matrix!T(array.ptr, width, height, Range([0, height - 1]), Range([0, width - 1]));
 }
 
 unittest
@@ -150,12 +276,12 @@ unittest
     assert(matrixT[4, 0] == 2);
     assert(matrixT[4, 2] == 8);
 
-    matrix = matrix[1..$, 3..$];
+    auto matrixA = matrix[1..$, 3..$];
 
-    assert(matrix[0, 0] == 6);
-    assert(matrix[0, 1] == 5);
+    assert(matrixA[0, 0] == 6);
+    assert(matrixA[0, 1] == 5);
 
-    matrixT = matrix.transposed;
+    matrixT = matrixA.transposed;
 
     // [   6, 9, 
     //     5, 8, 
