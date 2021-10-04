@@ -38,9 +38,9 @@ struct Matrix(T, bool Transposed = false)
     /// The user may provide as the first index the values in range [0, height).
     size_t height() const { return Transposed ? _colRange.length : _rowRange.length; }
 
-    auto inout transposed()
+    inout(Matrix!(T, !Transposed)) transposed() inout
     {
-        return inout(Matrix!(T, !Transposed))(array, _width, _height, _rowRange, _colRange);
+        return typeof(return)(array, _width, _height, _rowRange, _colRange);
     }
 
     /// Returns the internal index into the underlying array.
@@ -78,7 +78,7 @@ struct Matrix(T, bool Transposed = false)
         Range newColRange = Range([_colRange[0] + col[0], _colRange[0] + col[1] - 1]);
         assert(_colRange.contains(newColRange));
 
-        return inout(Matrix!(T, Transposed))(array, _width, _height, newRowRange, newColRange);        
+        return typeof(return)(array, _width, _height, newRowRange, newColRange);        
     }
 
     // Support for `x..y` notation in slicing operator for the given dimension.
@@ -187,6 +187,7 @@ unittest
     static assert(is(typeof(immutableMatrix[0..0, 0]) == typeof(immutableMatrix)));
     static assert(is(typeof(immutableMatrix.array) == immutable(int*)));
     static assert(is(typeof(immutableMatrix[0, 0]) == immutable(int)));
+    static assert(is(typeof(immutableMatrix.transposed()) == immutable(Matrix!(int, true))));
     static assert(!__traits(compiles, constMatrix[0, 0] = 2));
     static assert(!__traits(compiles, immutableMatrix[0, 0] = 2));
 }
