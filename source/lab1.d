@@ -1,10 +1,92 @@
-// import mpi;
-// import mpihelper = mh;
 
-// void main(string[] args)
-// {
-    
-// }
+int main()
+{
+    import mpi;
+    import mh = mpihelper;
+
+    auto info = mh.initialize();
+    scope(exit) mh.finalize();
+    Matrix!(int, true) BTranspose;
+
+    enum DataWidth = 6;
+    immutable AData = [
+        4,  0,  0,  0,  0,  0,
+        3,  3,  0,  0,  0,  0,
+        2,  2,  2,  0,  0,  0,
+        1,  1,  1,  1,  0,  0,
+        0,  0,  0,  0,  0,  0,
+       -1, -1, -1, -1, -1, -1,
+    ];
+    immutable BData = [
+        0,  2,  1,  0, -1, -2,
+        0,  0,  1,  0, -1, -2,
+        0,  0,  0,  0, -1, -2,
+        0,  0,  0,  0, -1, -2,
+        0,  0,  0,  0,  0, -2,
+        0,  0,  0,  0,  0,  0,
+    ];
+    assert(info.size == DataWidth);
+
+    const root = 0;
+    Matrix!int A;
+    Matrix!int BTraspose;
+    auto actualABuffer = AData.dup;
+
+    if (info == root)
+    {
+        auto actualBBuffer = traspose(BData, DataWidth);
+        A = matrixFromArray(actualABuffer, DataWidth);
+        BTraspose = matrixFromArray(actualBBuffer, DataWidth);
+        printMatrix(A);
+        printMatrix(BTranspose);
+        mh.intraScatterSend(actualABuffer, info);
+        mh.intraScatterSend(actualBBuffer, info);
+    }
+    else
+    {
+        auto actualABuffer = new int[DataWidth];
+        auto actualBBuffer = new int[DataWidth];
+        A = matrixFromArray(actualABuffer, DataWidth);
+        BTranspose = matrixFromArray(actualBBuffer, DataWidth);
+        mh.intraScatterRecv(actualABuffer, root);
+        mh.intraScatterRecv(actualBBuffer, root);
+    }
+}
+
+void printMatrix(M)(const(M) matrix)
+{
+    import std.stdio : write;
+    foreach (rowIndex; 0..matrix.height)
+    foreach (colIndex; 0..matrix.width)
+    {
+        write(matrix[rowIndex, colIndex]);
+        if (colIndex != matrix.width - 1)
+            write(" ");
+        else
+            write("\n");
+    }
+}
+
+T[] traspose(T)(const(T)[] elements, size_t width)
+{
+    auto height = elements.length / height;
+    auto result = new T[](width * height);
+    foreach (rowIndex; 0..height)
+    foreach (colIndex; 0..width)
+    {
+        result[rowIndex * width + colIndex] = elements[colIndex * height + rowIndex];
+    }
+    return result;
+}
+unittest
+{
+    auto t = transpose([ 1, 2, 3, 
+                         4, 5, 6, 
+                         7, 8, 9, ], 3, 3);
+    assert(t[] == [ 1, 4, 7,
+                    2, 5, 8,
+                    3, 6, 9, ]);
+}
 
 size_t[][] getIndicesOfMinInColumns(M)(ref const(M) matrix)
 {
@@ -121,8 +203,6 @@ unittest
     assert(globalIndices[1] == IndexPair(2, 2));
 }
 
-
-
 struct Range
 {
     size_t[2] arrayof;
@@ -170,7 +250,7 @@ struct Matrix(T, bool Transposed = false)
     }
 
     /// Returns the internal index into the underlying array.
-    private size_t getLinearIndex(size_t rowIndex, size_t colIndex) const
+    size_t getLinearIndex(size_t rowIndex, size_t colIndex) const
     {
         assert(rowIndex >= 0 && rowIndex < _rowRange.length); 
         assert(colIndex >= 0 && colIndex < _colRange.length); 

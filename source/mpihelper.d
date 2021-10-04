@@ -49,6 +49,19 @@ void barrier(MPI_Comm comm = MPI_COMM_WORLD) { MPI_Barrier(comm); }
 
 enum MPI_Datatype INVALID_DATATYPE = null;
 
+// TODO: a more complete list of these
+struct IntInt
+{
+    int value;
+    int rank;
+}
+
+struct DoubleInt
+{
+    double value;
+    int rank;
+}
+
 // We cannot 
 template Datatype(T)
 {
@@ -58,6 +71,10 @@ template Datatype(T)
         alias Datatype = MPI_FLOAT;
     else static if (is(T == double))
         alias Datatype = MPI_DOUBLE;
+    else static if (is(T == IntInt))
+        alias Datatype = MPI_2INT;
+    else static if (is(T == DoubleInt))
+        alias Datatype = MPI_DOUBLE_INT;
     else static if (IsCustomDatatype!T)
     {
         __gshared MPI_Datatype Datatype = INVALID_DATATYPE;
@@ -66,7 +83,8 @@ template Datatype(T)
 }
 
 enum IsCustomDatatype(T) = is(T : TElement[N], TElement, size_t N) || is(T == struct);
-enum IsValidDatatype(T) = is(T : int) || is(T : double) || IsCustomDatatype!T;
+enum IsValidDatatype(T) = is(T : int) || is(T : double) 
+    || is(T == IntInt) || is(T == DoubleInt) || IsCustomDatatype!T;
 
 // Must have a getter to allow AliasSeq to work.
 auto getDatatypeId(T)()

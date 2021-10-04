@@ -7,6 +7,7 @@ A realizat: **Curmanschii Anton, IA1901**
   - [Sarcina](#sarcina)
   - [Realizarea](#realizarea)
     - [Matrice](#matrice)
+    - [1.a) Procesul 0 inițializează și distribuie.](#1a-procesul-0-inițializează-și-distribuie)
 
 ## Sarcina
 
@@ -717,3 +718,194 @@ unittest
     assert(globalIndices[1] == IndexPair(2, 2));
 }
 ```
+
+
+### 1.a) Procesul 0 inițializează și distribuie.
+
+Am făcut o funcție ajutătoare de inițializare pentru a simplifica acest proces în fiecare program:
+
+```d
+struct InitInfo
+{
+    int size;
+    int rank;
+    CArgs args;
+}
+
+InitInfo initialize()
+{
+    InitInfo result;
+    // `with` înseamnă câmpurile lui result acum sunt vizibile fără calificare,
+    // adică `size` acum se referă la `result.size`.
+    with (result)
+    {
+        args = Runtime.cArgs;
+        MPI_Init(&args.argc, &args.argv);
+        MPI_Comm_size(MPI_COMM_WORLD, &size);
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    }
+    return result;
+}
+
+void finalize()
+{
+    MPI_Finalize();
+}
+```
+
+Și o utilizăm astfel:
+
+```d
+import mpihelper = mh;
+int main()
+{
+    auto info = mh.initialize();
+    scope(exit) mh.finalize(); // este invocat când main se termină
+    // ...
+}
+```
+
+Declarăm tablourile pentru copiere:
+
+```d
+// `enum` înseamnă constanta cunoscută în timpul compilării
+enum DataWidth = 6;
+immutable AData = [
+    4,  0,  0,  0,  0,  0,
+    3,  3,  0,  0,  0,  0,
+    2,  2,  2,  0,  0,  0,
+    1,  1,  1,  1,  0,  0,
+    0,  0,  0,  0,  0,  0,
+   -1, -1, -1, -1, -1, -1,
+];
+immutable BData = [
+    0,  2,  1,  0, -1, -2,
+    0,  0,  1,  0, -1, -2,
+    0,  0,  0,  0, -1, -2,
+    0,  0,  0,  0, -1, -2,
+    0,  0,  0,  0,  0, -2,
+    0,  0,  0,  0,  0,  0,
+];
+```
+
+Evident, pentru acest caz simplist se consideră că matricele sunt pătratice și de o lungime fixă.
+În acest caz fiecare proces va primi câte o linie sau câte o coloană (o singură).
+De aceea numărul de procese trebuie să fie numaidecât egal cu numărul de coloane (linii):
+```d
+assert(info.size == DataWidth);
+```
+
+Pentru cazul simplist trebuie să inițializez matricele de către procesul cu rancul 0.
+Aici deja devine clar în ce constext s-a trebuit transpusul — pentru a transpune B când o inițializăm.
+Deci ideea mea cu transpusul virtual până când nu este tare utilă.
+
+Putem afișa datele inițiale direct de la tabourile, însă atunci nu primim "tabelarea".
+Deci voi face o funcție ce afișează o matrice având lungimea și lațimea.
+
+```d
+void printMatrix(M)(const(M) matrix)
+{
+    // import local: simbolurile menționate (write) 
+    // sunt accesibile până la terminarea scopului.
+    import std.stdio : write;
+    foreach (rowIndex; 0..matrix.height)
+    foreach (colIndex; 0..matrix.width)
+    {
+        write(matrix[rowIndex, colIndex]);
+        if (colIndex != matrix.width - 1)
+            write(", ");
+        else
+            write("\n");
+    }
+}
+
+T[] traspose(T)(const(T)[] elements, size_t width)
+{
+    auto height = elements.length / width;
+    auto result = new T[](width * height);
+    foreach (rowIndex; 0..height)
+    foreach (colIndex; 0..width)
+    {
+        result[rowIndex * width + colIndex] = elements[colIndex * height + rowIndex];
+    }
+    return result;
+}
+unittest
+{
+    auto t = transpose([ 1, 2, 3, 
+                         4, 5, 6, 
+                         7, 8, 9, ], 3, 3);
+    assert(t[] == [ 1, 4, 7,
+                    2, 5, 8,
+                    3, 6, 9, ]);
+}
+
+const root = 0;
+Matrix!int A;
+Matrix!int BTraspose;
+if (info == root)
+{
+    A = matrixFromArray(AData.dup, DataWidth);
+    BTraspose = matrixFromArray(traspose(BData, DataWidth), DataWidth);
+    printMatrix(A);
+    printMatrix(BTranspose);
+}
+```
+
+MPI_Scatter nu este o funcție bună după părerea mea, deoarece ea după prototipul ei standart primește 3 parametri care sunt actuali numai la root. 
+De aceea am separat MPI_Scatter în 2 funcții mai specifice, `intraScatterSend` și `intraScatterRecv`.
+După [specificarea MPI](https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=352&zoom=180,-4,310), *intra*comunicare înseamnă că procesele sunt în același grup.
+
+Am definit funcțiile astfel:
+```d
+/// Does an inplace scatter as the root process - the process' share of buffer is left in the buffer
+int intraScatterSend(T)(T buffer, in InitInfo info, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    alias sendBufferInfo = BufferInfo!buffer;
+    return MPI_Scatter(sendBufferInfo.ptr, sendBufferInfo.length / info.size, sendBufferInfo.datatype,
+        MPI_IN_PLACE, 0, null, info.rank, comm);
+}
+
+/// Receives data from the root process using MPI_Scatter
+int intraScatterRecv(T)(T buffer, int root, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    return MPI_Scatter(null, 0, null, UnrollBuffer!buffer, root, comm);
+}
+```
+
+`BufferInfo!buffer` și `UnrollBuffer!buffer` permit deducerea implicită a 3 parametri: pointer, lungimea și tipul de date.
+Sunt ceva avansate, deci pentru simplitate nu le includ aici, însă [vedeți codul](https://github.com/AntonC9018/uni_parallel/blob/026dd2d29a70b4f5d697d4cface782ddb4453ba9/source/mpihelper.d#L118-L143).
+
+Deci, dacă procesul nu este root, vom inițializa A și B la o matrice de o singură linie (anticipând uzul mai avansat, însă am putea să le pastrăm și ca un bufer liniar.
+
+```d
+const root = 0;
+Matrix!int A;
+Matrix!int BTraspose;
+if (info == root)
+{
+    auto actualABuffer = AData.dup;
+    auto actualBBuffer = traspose(BData, DataWidth);
+    A = matrixFromArray(actualABuffer, DataWidth);
+    BTraspose = matrixFromArray(actualBBuffer, DataWidth);
+    printMatrix(A);
+    printMatrix(BTranspose);
+    mh.intraScatterSend(actualABuffer, info);
+    mh.intraScatterSend(actualBBuffer, info);
+}
+else
+{
+    auto actualABuffer = new int[DataWidth];
+    auto actualBBuffer = new int[DataWidth];
+    A = matrixFromArray(actualABuffer, DataWidth);
+    BTranspose = matrixFromArray(actualBBuffer, DataWidth);
+    mh.intraScatterRecv(actualABuffer, root);
+    mh.intraScatterRecv(actualBBuffer, root);
+}
+```
+
+Cu totul nu-mi place așa abordare, deoarece rândurile nu trebuie să fie matrici. Pot fi doar linii.
+
+
+Acum aflăm că trebuie să utilizăm `MPI_Reduce` pentru acest caz simplist, deci totuși trebuie să schimbăm ceva datele.
+Vom păstra 
