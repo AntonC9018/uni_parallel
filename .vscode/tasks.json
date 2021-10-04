@@ -1,0 +1,25 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "compile_program",
+            "type": "shell",
+            "command": "dmd",
+            "args": [
+                "-gf", "-i", "-m64",
+                "${workspaceRoot}/source/${config:filename}.d",
+                "-of=${workspaceRoot}/bin/${config:filename}.exe"
+            ]
+        },
+        {
+            "label": "compile_tests",
+            "type": "shell",
+            "command": "dmd",
+            "args": [
+                "-gf", "-i", "-m64", "-main", "-unittest",
+                "${workspaceRoot}/source/${config:filename}.d",
+                "-of=${workspaceRoot}/bin/${config:filename}.exe"
+            ]
+        }
+    ]
+}
