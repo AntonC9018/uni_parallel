@@ -4,9 +4,9 @@ Tema: **Jocuri bimatriceale si situatii Nash de echilibru.**
 A realizat: **Curmanschii Anton, IA1901**
 
 - [Lucrarea de laborator nr.1 la Programarea Paraelelă și Distribuită](#lucrarea-de-laborator-nr1-la-programarea-paraelelă-și-distribuită)
-	- [Sarcina](#sarcina)
-	- [Realizarea](#realizarea)
-		- [Matrice](#matrice)
+  - [Sarcina](#sarcina)
+  - [Realizarea](#realizarea)
+    - [Matrice](#matrice)
 
 ## Sarcina
 
@@ -483,7 +483,7 @@ Pentru a supraîncărca operația de indexare vom folosi funcția `opIndex`:
 // a fost utilizată operația.
 auto ref opIndex(size_t rowIndex, size_t colIndex)
 {
-	// funcția `swap` este echivalentă cu clasicul `auto t = a; a = b; b = t;`
+    // funcția `swap` este echivalentă cu clasicul `auto t = a; a = b; b = t;`
     if (Transposed)
         swap(rowIndex, colIndex);
     return array[getLinearIndex(rowIndex, colIndex)];
