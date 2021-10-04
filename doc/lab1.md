@@ -566,4 +566,4 @@ auto matrixFromArray(T)(T[] array, size_t width)
 ```
 
 Am mai definit niște teste, pentru a mă asigura că lucrează corect.
-Vedeți codul pe github, nu-l plasez aici.
+Vedeți [codul pe github](https://github.com/AntonC9018/uni_parallel/blob/26831202b5a3c6e6d7e6ebba3e69c8f19c571886/source/lab1.d#L97-L181), nu-l plasez aici.
