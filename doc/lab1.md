@@ -369,8 +369,9 @@ range.length; // ne dă 2, adică range.arrayof.length, însă am dori să ne de
 
 Adăugăm funcția `length()`.
 
-```
-size_t length() { return arrayof[1] - arrayof[0] + 1; }
+```d
+// `const` înseamnă că intervalul nostru nu se schimbă după operație.
+size_t length() const { return arrayof[1] - arrayof[0] + 1; }
 ```
 
 În D parantezele la apelarea funcțiilor sunt opționale, deci `range.length` este semantic echivalent cu `range.length()`.
@@ -392,8 +393,8 @@ Aici evident nu se face validarea, deoarece capetele din dreapta trebuie să fie
 Am mai adăugat 2 funcții care verifică dacă un alt interval este în intervalul nostru, și dacă un număr este în intervalul nostru:
 
 ```d
-bool contains(size_t a) { return a >= arrayof[0] && a <= arrayof[1]; }
-bool contains(Range a) { return a[0] >= arrayof[0] && a[1] <= arrayof[1]; }
+bool contains(size_t a) const { return a >= arrayof[0] && a <= arrayof[1]; }
+bool contains(Range a) const { return a[0] >= arrayof[0] && a[1] <= arrayof[1]; }
 ```
 
 Mai am definit o funcție șablon care permite să facem orice operații aritmetice cu intervalul nostru și un obiect care conține elementele după indici 0 și 1.
@@ -405,7 +406,6 @@ Mai am definit o funcție șablon care permite să facem orice operații aritmet
 // `(const auto ref R rhs)` înseamnă că nu vom modifica `rhs` 
 // și că acceptăm orice tip de valori: rvalue, lvalue, după referință sau cu copiere.
 // Compilatorul singur decide ce funcție se va executa.
-// `const` înseamnă că intrvalul nostru nu se schimbă după operație.
 Range opBinary(string op, R)(const auto ref R rhs) const
 {
     // `mixin` inserează șirul dat ca cod.
@@ -431,19 +431,19 @@ struct Matrix(T, bool Transposed = false)
     /// The actual height of the underlying matrix.
     size_t _height;
     /// The width of the source matrix, as seen after transposition.
-    size_t allWidth()  { return Transposed ? _height : _width;  }
+    size_t allWidth()  const { return Transposed ? _height : _width;  }
     /// The height of the source matrix, as seen after transposition.
-    size_t allHeight() { return Transposed ? _width  : _height; }
+    size_t allHeight() const { return Transposed ? _width  : _height; }
 
     Range _rowRange;
     Range _colRange;
 
     /// The width of the matrix, as available to the user.
     /// The user may provide as the second index the values in range [0, width).
-    size_t width()  { return Transposed ? _rowRange.length : _colRange.length; }
+    size_t width()  const { return Transposed ? _rowRange.length : _colRange.length; }
     /// The height of the matrix, as available to the user.
     /// The user may provide as the first index the values in range [0, height).
-    size_t height() { return Transposed ? _colRange.length : _rowRange.length; }
+    size_t height() const { return Transposed ? _colRange.length : _rowRange.length; }
 }
 ```
 
@@ -453,11 +453,11 @@ Funcțiile getter sunt pentru comoditate a utilizatorului (iterarea etc.)
 Așa ca proprietatea transpusului este controlată numai de variabila `Transposed`, operația de transpunere este trivială:
 ```d
 // `auto` înțelege tipul implicit ca Matrix!(T, !Transposed)
-auto transposed()
+auto transposed() inout
 {
     // Prin primul semn al exclamării îi dăm matricei valorile șablon.
     // `Struct!(a, b)` este ca ca `Struct<a, b>` în C++.
-    return Matrix!(T, !Transposed)(array, _width, _height, _rowRange, _colRange);
+    return inout(Matrix!(T, !Transposed))(array, _width, _height, _rowRange, _colRange);
 }
 ```
 
@@ -466,7 +466,7 @@ Aici se presupune că `rowIndex` și `colIndex` sunt deja conform proprietății
 
 ```d
 /// Returns the internal index into the underlying array.
-private size_t getLinearIndex(size_t rowIndex, size_t colIndex)
+private size_t getLinearIndex(size_t rowIndex, size_t colIndex) const
 {
     assert(rowIndex >= 0 && rowIndex < _rowRange.length); 
     assert(colIndex >= 0 && colIndex < _colRange.length); 
@@ -481,7 +481,7 @@ Pentru a supraîncărca operația de indexare vom folosi funcția `opIndex`:
 ```d
 // auto ref înseamnă returnează lvalue ori rvalue, în dependența de contextul în care
 // a fost utilizată operația.
-auto ref opIndex(size_t rowIndex, size_t colIndex)
+auto ref inout opIndex(size_t rowIndex, size_t colIndex)
 {
     // funcția `swap` este echivalentă cu clasicul `auto t = a; a = b; b = t;`
     if (Transposed)
@@ -514,13 +514,13 @@ Deci această modalitate ne-ar permite să luăm părți dreptunghulare arbitrar
 
 Funcția `opDollar` permite să definim acea variabilă $ implicită:
 ```d
-size_t opDollar(size_t dim : 0)() { return height; }
-size_t opDollar(size_t dim : 1)() { return width;  }
+size_t opDollar(size_t dim : 0)() const { return height; }
+size_t opDollar(size_t dim : 1)() const { return width;  }
 ```
 
 Funcția `opIndex` lucrează cu tablouri de 2 elemente ca indici:
 ```d
-auto opIndex(size_t[2] row, size_t[2] col)
+auto inout opIndex(size_t[2] row, size_t[2] col)
 {
     if (Transposed)
         swap(row, col);
@@ -531,14 +531,14 @@ auto opIndex(size_t[2] row, size_t[2] col)
     Range newColRange = Range([_colRange[0] + col[0], _colRange[0] + col[1] - 1]);
     assert(_colRange.contains(newColRange));
 
-    return Matrix!(T, Transposed)(array, _width, _height, newRowRange, newColRange);        
+    return inout(Matrix!(T, Transposed))(array, _width, _height, newRowRange, newColRange);        
 }
 ```
 
 Și pentru a transforma `a..b` în `size_t[2]` mai avem nevoie să definim funcția `opSlice`:
 ```d
 // Support for `x..y` notation in slicing operator for the given dimension.
-size_t[2] opSlice(size_t dim)(size_t start, size_t end) if (dim >= 0 && dim < 2)
+size_t[2] opSlice(size_t dim)(size_t start, size_t end) const if (dim >= 0 && dim < 2)
 {
     return [start, end];
 }
@@ -547,9 +547,9 @@ size_t[2] opSlice(size_t dim)(size_t start, size_t end) if (dim >= 0 && dim < 2)
 Mai avem nevoie să acoperim cazurile când unul din indicii nu este un interval:
 ```d
 // m[a..b, c] = m[a..b, c .. c + 1]
-auto opIndex(size_t[2] rows, size_t colIndex) { return opIndex(rows, [colIndex, colIndex + 1]); }
+auto inout opIndex(size_t[2] rows, size_t colIndex) { return opIndex(rows, [colIndex, colIndex + 1]); }
 // m[a, b..c] = m[a .. a + 1, b..c]
-auto opIndex(size_t rowIndex, size_t[2] cols) { return opIndex([rowIndex, rowIndex + 1], cols); }
+auto inout opIndex(size_t rowIndex, size_t[2] cols) { return opIndex([rowIndex, rowIndex + 1], cols); }
 ```
 
 Atât cu matricea!
