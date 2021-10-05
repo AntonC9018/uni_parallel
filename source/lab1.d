@@ -1,3 +1,23 @@
+// DATA processed by the processes
+enum DataWidth = 6;
+immutable AData = [
+    4,  0,  0,  0,  0,  0,
+    3,  3,  0,  0,  0,  0,
+    2,  2,  2,  0,  0,  0,
+    1,  1,  1,  1,  0,  0,
+    0,  0,  0,  0,  0,  0,
+    -1, -1, -1, -1, -1, -1,
+];
+immutable BData = [
+    0,  2,  1,  0, -1, -2,
+    0,  0,  1,  0, -1, -2,
+    0,  0,  0,  0, -1, -2,
+    0,  0,  0,  0, -1, -2,
+    0,  0,  0,  0,  0, -2,
+    0,  0,  0,  0,  0,  0,
+];
+static assert(AData.length == DataWidth^^2);
+static assert(BData.length == DataWidth^^2);
 
 int main()
 {
@@ -7,34 +27,12 @@ int main()
 
     auto info = mh.initialize();
     scope(exit) mh.finalize();
-
-    enum DataWidth = 6;
-    immutable AData = [
-        4,  0,  0,  0,  0,  0,
-        3,  3,  0,  0,  0,  0,
-        2,  2,  2,  0,  0,  0,
-        1,  1,  1,  1,  0,  0,
-        0,  0,  0,  0,  0,  0,
-       -1, -1, -1, -1, -1, -1,
-    ];
-    immutable BData = [
-        0,  2,  1,  0, -1, -2,
-        0,  0,  1,  0, -1, -2,
-        0,  0,  0,  0, -1, -2,
-        0,  0,  0,  0, -1, -2,
-        0,  0,  0,  0,  0, -2,
-        0,  0,  0,  0,  0,  0,
-    ];
     mh.abortIf(info.size != DataWidth, "Number of processes must be equal to the matrix dimension");
-    static assert(AData.length == DataWidth^^2);
-    static assert(BData.length == DataWidth^^2);
 
     const root = 0;
     int[] A;
     int[] BTranspose;
     int[] scatterReceiveBuffer;
-    mh.IntInt[] reduceBufferA = new mh.IntInt[](DataWidth);
-    mh.IntInt[] reduceBufferB = new mh.IntInt[](DataWidth);
 
     bool isRoot() { return info.rank == root; }
     auto rootBufferStartIndex() { return root * DataWidth; }
@@ -72,6 +70,7 @@ int main()
             pair.value = scatterReceiveBuffer[i];
         }
     }
+    auto reduceBufferA = new mh.IntInt[](DataWidth);
     interweaveReduceBuffer(reduceBufferA);
 
     // Reduce in-place. Does this, but with compile-time deduction of some parameters:
@@ -97,6 +96,7 @@ int main()
     {
         mh.intraScatterRecv(scatterReceiveBuffer, root);
     }
+    auto reduceBufferB = new mh.IntInt[](DataWidth);
     interweaveReduceBuffer(reduceBufferB);
     mh.intraReduce(reduceBufferB, MPI_MAXLOC, root);
 
