@@ -454,7 +454,7 @@ void abortIf(bool condition, lazy string message = null, MPI_Comm comm = MPI_COM
     if (condition)
     {
         import std.stdio : writeln;
-        writeln("The process has been aborted:" ~ message);
+        writeln("The process has been aborted: ", message);
         MPI_Abort(comm, 1);
     }
 }

@@ -322,6 +322,12 @@ Pentru aceasta avem nevoie de următoarele lucruri:
 - S-o putem ușor transpune.
 - Să putem păstra o mulțime de indici.
 
+> Ca atare, puteți deodată trece la următoarea secțiune. 
+> Aici construiesc un API care de fapt nu s-a dovedit util, deoarece tablouri simple sunt destul de suficiente pentru rezolvări.
+> Această abstracție nu este necesară pentru problema, și doar o complică. (FIXME)
+> 
+> Însă, în această secțiune descriu unele concepte limbajului D, deci dacă sunt interesați de aceasta, atunci citiți.
+
 Fiind dat faptul că matricile sunt doar bidimensionale, nu vom primi multă performanță decă utilizăm un *vector definitor*, deci voi implementa ceva foarte simplu.
 
 Sunt și librării pentru așa lucruri în D, de exemplu `mir`, însă pentru simplitate voi realiza singur.
@@ -359,7 +365,7 @@ struct Range
 
 Acum dacă avem o variabilă de tip `Range` indexarea directă este posibilă (se indexează arrayof).
 
-Vom dori încă să supraîncărcăm proprietatea `length`, deoarece la moment `length` este readreasat lui tabloului subiacent.
+Vom dori încă să supraîncărcăm proprietatea `length`, deoarece la moment `length` este readreasat la tabloul subiacent.
 
 ```
 Range range;
@@ -379,7 +385,7 @@ size_t length() const { return arrayof[1] - arrayof[0] + 1; }
 
 Am dori să putem construi un Range dându-i valorile pentru capetele intervalului.
 D de fapt definește implicit un constructor care atribuie valorile tuturor membrilor după tipurile lor, deci constructorul este deja definit.
-Mie nu-mi place să fac validarea sau logica complicată în constructorul, deci constructorii mei în alte limbaje sunt ori inexistente dacă posibil, ori echivalente la constructori care D ar defini implicit.
+Mie nu-mi place să fac validarea sau logica complicată în constructorul, deci constructorii mei în alte limbaje sunt ori inexistenți dacă posibil, ori echivalenți cu constructori care D ar defini implicit.
 Eu prefer funcții fabrici.
 
 ```d
@@ -389,7 +395,7 @@ Range range;
 range.arrayof = [1, 2];
 ```
 
-Aici evident nu se face validarea, deoarece capetele din dreapta trebuie să fie mai mare sau egal cu capetele din stânga.
+Aici evident nu se face validarea (capetele din dreapta trebuie să fie mai mare sau egal cu capetele din stânga).
 
 Am mai adăugat 2 funcții care verifică dacă un alt interval este în intervalul nostru, și dacă un număr este în intervalul nostru:
 
@@ -457,7 +463,7 @@ Așa ca proprietatea transpusului este controlată numai de variabila `Transpose
 auto transposed() inout
 {
     // Prin primul semn al exclamării îi dăm matricei valorile șablon.
-    // `Struct!(a, b)` este ca ca `Struct<a, b>` în C++.
+    // `Struct!(a, b)` este ca `Struct<a, b>` în C++.
     return inout(Matrix!(T, !Transposed))(array, _width, _height, _rowRange, _colRange);
 }
 ```
@@ -562,7 +568,7 @@ Am definit o funcție fabrică ce returnează o matrice construită din valorile
 auto matrixFromArray(T)(T[] array, size_t width)
 {
     auto height = array.length / width;
-    return Matrix!T(array.ptr, width, height, Range([0, height]), Range([0, width]));
+    return Matrix!T(array.ptr, width, height, Range([0, height - 1]), Range([0, width - 1]));
 }
 ```
 
@@ -571,7 +577,7 @@ Vedeți [codul pe github](https://github.com/AntonC9018/uni_parallel/blob/268312
 Am mai modificat codul ceva nesemnificativ, tot nu inserez aici.
 
 
-Acum voi scrie codul care ar opera pe așa matrice arbitrară, selectând indicele minimului după coloanele într-un tablou, zicem dinamic, pentru fiecare coloană.
+Acum voi scrie codul care ar opera pe așa matrice arbitrară, selectând indicii minimului după coloanele într-un tablou, zicem dinamic, pentru fiecare coloană.
 
 Voi face acest lucru în stilul TDD (Test Driven Development).
 Avem cetințe concrete, deci putem scrie un unit test.
@@ -590,7 +596,7 @@ unittest
 
     assert(indices.length == 3);
     foreach (i; 0..3)
-        assert(indices[i][] == [0, 1]); 
+        assert(indices[i][] == [0, 2]); 
 }
 ```
 
@@ -756,9 +762,10 @@ void finalize()
 Și o utilizăm astfel:
 
 ```d
-import mpihelper = mh;
 int main()
 {
+    import mh = mpihelper;
+
     auto info = mh.initialize();
     scope(exit) mh.finalize(); // este invocat când main se termină
     // ...
@@ -776,7 +783,7 @@ immutable AData = [
     2,  2,  2,  0,  0,  0,
     1,  1,  1,  1,  0,  0,
     0,  0,  0,  0,  0,  0,
-   -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1,
 ];
 immutable BData = [
     0,  2,  1,  0, -1, -2,
@@ -786,40 +793,36 @@ immutable BData = [
     0,  0,  0,  0,  0, -2,
     0,  0,  0,  0,  0,  0,
 ];
+// Matricele trebuie să fie pătratice. 
+// `static assert` verifică condiția în timpul compilării.
+static assert(AData.length == DataWidth^^2);
+static assert(BData.length == DataWidth^^2);
 ```
 
-Evident, pentru acest caz simplist se consideră că matricele sunt pătratice și de o lungime fixă.
+Evident, pentru acest caz simplist se consideră că matricii sunt pătratici și de o lungime fixă.
 În acest caz fiecare proces va primi câte o linie sau câte o coloană (o singură).
-De aceea numărul de procese trebuie să fie numaidecât egal cu numărul de coloane (linii):
+De aceea numărul de procese trebuie să fie numaidecât egal cu numărul de coloane (linii).
 ```d
-assert(info.size == DataWidth);
-```
-
-Pentru cazul simplist trebuie să inițializez matricele de către procesul cu rancul 0.
-Aici deja devine clar în ce constext s-a trebuit transpusul — pentru a transpune B când o inițializăm.
-Deci ideea mea cu transpusul virtual până când nu este tare utilă.
-
-Putem afișa datele inițiale direct de la tabourile, însă atunci nu primim "tabelarea".
-Deci voi face o funcție ce afișează o matrice având lungimea și lațimea.
-
-```d
-void printMatrix(M)(const(M) matrix)
+// `lazy` este util pentru șiruri care necesită formatare. 
+// Înseamnă că valoarea mesajului va fi evaluată doar atunci când ea este accesată în corpul funcției. 
+void abortIf(bool condition, lazy string message = null, MPI_Comm comm = MPI_COMM_WORLD)
 {
-    // import local: simbolurile menționate (write) 
-    // sunt accesibile până la terminarea scopului.
-    import std.stdio : write;
-    foreach (rowIndex; 0..matrix.height)
-    foreach (colIndex; 0..matrix.width)
+    if (condition)
     {
-        write(matrix[rowIndex, colIndex]);
-        if (colIndex != matrix.width - 1)
-            write(", ");
-        else
-            write("\n");
+        import std.stdio : writeln;
+        writeln("The process has been aborted: ", message);
+        MPI_Abort(comm, 1);
     }
 }
+abortIf(info.size != DataWidth, "Number of processes must be equal to the matrix dimension");
+```
 
-T[] traspose(T)(const(T)[] elements, size_t width)
+Pentru cazul simplist trebuie să inițializez matricii de către procesul cu rancul 0.
+Aici deja devine clar în ce context s-a trebuit transpusul — pentru a transpune B când o inițializăm.
+Deci ideea mea cu transpusul virtual până când nu este tare utilă.
+
+```d
+T[] transpose(T)(const(T)[] elements, size_t width)
 {
     auto height = elements.length / width;
     auto result = new T[](width * height);
@@ -839,20 +842,58 @@ unittest
                     2, 5, 8,
                     3, 6, 9, ]);
 }
+```
 
-const root = 0;
-Matrix!int A;
-Matrix!int BTraspose;
-if (info == root)
+Putem afișa datele inițiale direct de la tabouri, însă atunci nu primim "tabelarea".
+Deci voi face o funcție ce afișează o matrice având de fapt lungimea și lațimea.
+
+```d
+void printMatrix(T)(const(T)[] matrix, size_t width)
 {
-    A = matrixFromArray(AData.dup, DataWidth);
-    BTraspose = matrixFromArray(traspose(BData, DataWidth), DataWidth);
-    printMatrix(A);
-    printMatrix(BTranspose);
+    const height = matrix.length / width;
+
+    import std.stdio : write;
+    foreach (rowIndex; 0..height)
+    foreach (colIndex; 0..width)
+    {
+        write(matrix[rowIndex * width + colIndex]);
+        if (colIndex != width - 1)
+            write(" ");
+        else
+            write("\n");
+    }
 }
 ```
 
-MPI_Scatter nu este o funcție bună după părerea mea, deoarece ea după prototipul ei standart primește 3 parametri care sunt actuali numai la root. 
+Urmează utilizarea funcțiilor descriși până acum în main.
+În funcția scatter folosim parametrul special [`MPI_IN_PLACE`](https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=248&zoom=180,34,598) pentru a nu aloca un bufer nou pentru procesul root.
+În loc de asta, facem variabila `scatterReceiveBuffer` să se refere la segmentul buferului cu datele procesului `root`, în cazul în care este inițializată de către root.
+
+```d
+const root = 0;
+int[] A;
+int[] BTranspose;
+int[] scatterReceiveBuffer;
+
+bool isRoot() { return info.rank == root; }
+auto rootBufferStartIndex() { return root * DataWidth; }
+
+if (isRoot)
+{
+    // `dup` alocă memoria și copiează buferul.
+    A = AData.dup; 
+    BTranspose = transpose(BData, DataWidth);
+    printMatrix(A, DataWidth);
+    printMatrix(BTranspose, DataWidth);
+    scatterReceiveBuffer = A[rootBufferStartIndex .. (rootBufferStartIndex + DataWidth)];
+}
+else
+{
+    scatterReceiveBuffer = new int[](DataWidth);
+}
+```
+
+MPI_Scatter nu este o funcție bună după părerea mea, deoarece ea după prototipul său standart primește 3 parametri care sunt actuali numai la root. 
 De aceea am separat MPI_Scatter în 2 funcții mai specifice, `intraScatterSend` și `intraScatterRecv`.
 După [specificarea MPI](https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=352&zoom=180,-4,310), *intra*comunicare înseamnă că procesele sunt în același grup.
 
@@ -876,36 +917,113 @@ int intraScatterRecv(T)(T buffer, int root, MPI_Comm comm = MPI_COMM_WORLD)
 `BufferInfo!buffer` și `UnrollBuffer!buffer` permit deducerea implicită a 3 parametri: pointer, lungimea și tipul de date.
 Sunt ceva avansate, deci pentru simplitate nu le includ aici, însă [vedeți codul](https://github.com/AntonC9018/uni_parallel/blob/026dd2d29a70b4f5d697d4cface782ddb4453ba9/source/mpihelper.d#L118-L143).
 
-Deci, dacă procesul nu este root, vom inițializa A și B la o matrice de o singură linie (anticipând uzul mai avansat, însă am putea să le pastrăm și ca un bufer liniar.
+Urmează utilizarea funcțiilor în program. 
+Cum puteți vedea, buferul de ieșire este eliminat pentru procesul root, iar buferul de intrare este eliminat pentru celelalte procese.
 
 ```d
-const root = 0;
-Matrix!int A;
-Matrix!int BTraspose;
-if (info == root)
-{
-    auto actualABuffer = AData.dup;
-    auto actualBBuffer = traspose(BData, DataWidth);
-    A = matrixFromArray(actualABuffer, DataWidth);
-    BTraspose = matrixFromArray(actualBBuffer, DataWidth);
-    printMatrix(A);
-    printMatrix(BTranspose);
-    mh.intraScatterSend(actualABuffer, info);
-    mh.intraScatterSend(actualBBuffer, info);
-}
+// Sort of does this, except does no copying at root.
+// MPI_Scatter(
+//    A.ptr, scatterReceiveBuffer.length, MPI_INT, 
+//    scatterReceiveBuffer.ptr, scatterReceiveBuffer.length, MPI_INT, 
+//    root, MPI_COMM_WORLD);
+if (isRoot)
+    mh.intraScatterSend(A, info);
 else
+    mh.intraScatterRecv(scatterReceiveBuffer, root);
+```
+
+Acum putem prepara buferul pentru operația de reducere.
+Pentru cazul simplu este necesar să folosim operația MPI_MAXLOC, pentru care avem nevoie să împletim valorile rândurilor la fiecare proces cu rancul lui.
+La mine am numere întregi în tablouri, de aceea am definit structura care va ține perechea valoare - indice în așa mod:
+```d
+struct IntInt
 {
-    auto actualABuffer = new int[DataWidth];
-    auto actualBBuffer = new int[DataWidth];
-    A = matrixFromArray(actualABuffer, DataWidth);
-    BTranspose = matrixFromArray(actualBBuffer, DataWidth);
-    mh.intraScatterRecv(actualABuffer, root);
-    mh.intraScatterRecv(actualBBuffer, root);
+    int value;
+    int rank;
 }
 ```
 
-Cu totul nu-mi place așa abordare, deoarece rândurile nu trebuie să fie matrici. Pot fi doar linii.
+Și funcția respectivă pentru împletirea în program (am definit-o ca o funcție deoarece o utilizăm de mai multe ori):
 
+```d
+// Este definită local în scopul funcției main, de aceea "vede" variabile ei.
+void interweaveReduceBuffer(mh.IntInt[] buffer)
+{
+    foreach (i, ref pair; buffer)
+    {
+        pair.rank  = info.rank;
+        pair.value = scatterReceiveBuffer[i];
+    }
+}
+auto reduceBufferA = new mh.IntInt[](DataWidth);
+interweaveReduceBuffer(reduceBufferA);
+```
 
-Acum aflăm că trebuie să utilizăm `MPI_Reduce` pentru acest caz simplist, deci totuși trebuie să schimbăm ceva datele.
-Vom păstra 
+Acum funcția Reduce. 
+Tot am definit un wrapper care determină tipul și lungimea buferului din tipurile parametrilor.
+Iarăși folosim `MPI_IN_PLACE` pentru `outputBuffer` ca să nu alocăm un bufer nou pentru aceasta în root.
+```d
+int intraReduce(T)(T buffer, MPI_Op opHandle, int root, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    alias bufferInfo = BufferInfo!buffer;
+    return MPI_Reduce(bufferInfo.ptr, MPI_IN_PLACE, bufferInfo.length, bufferInfo.datatype, opHandle, root, comm);
+}
+```
+
+Am făcut o funcție pentru afișare a rezultatelor intermediare (o apelăm de două ori).
+Această funcție o putem scoate din main și s-o folosim și în alte variante.
+```d
+void printReduceBuffer(string matrixName, mh.IntInt[] buffer)
+{
+    writeln("Reduce buffer data for matrix`", matrixName, "`:");
+    foreach (colIndex, pair; buffer)
+        writeln("Maximum element's row index in the column ", colIndex, " is ", pair.rank, " with value ", pair.value);
+}
+
+if (isRoot)
+{
+    printReduceBuffer("A", reduceBufferA);
+}
+```
+
+Acum facem același lucru pentru `BTranspose`:
+```d
+if (isRoot)
+{
+    scatterReceiveBuffer = BTranspose[rootBufferStartIndex .. (rootBufferStartIndex + DataWidth)];
+    mh.intraScatterSend(BTranspose, info);
+}
+else
+{
+    mh.intraScatterRecv(scatterReceiveBuffer, root);
+}
+auto reduceBufferB = new mh.IntInt[](DataWidth);
+interweaveReduceBuffer(reduceBufferB);
+mh.intraReduce(reduceBufferB, MPI_MAXLOC, root);
+
+if (isRoot)
+{
+    printReduceBuffer("BTraspose", reduceBufferB);
+}
+```
+
+Și în final verificăm dacă avem perechi de indici egale:
+```d
+if (isRoot)
+{
+    int hitCount = 0;
+    foreach (colIndexA; 0..DataWidth)
+    foreach (rowIndexB; 0..DataWidth)
+    {
+        auto colIndexB = reduceBufferB[rowIndexB].rank;
+        auto rowIndexA = reduceBufferA[colIndexA].rank;
+        if (colIndexA == colIndexB && rowIndexA == colIndexB)
+        {
+            hitCount++;
+            writeln("Nash Equilibrium: (", colIndexA, ", ", rowIndexA, ")."); 
+        }
+    }
+    if (hitCount == 0)
+        writeln("No Nash Equilibrium.");
+}
+```
