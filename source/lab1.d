@@ -3,10 +3,10 @@ int main()
 {
     import mpi;
     import mh = mpihelper;
+    import std.stdio : writeln;
 
     auto info = mh.initialize();
     scope(exit) mh.finalize();
-    Matrix!(int, true) BTranspose;
 
     enum DataWidth = 6;
     immutable AData = [
@@ -25,35 +25,119 @@ int main()
         0,  0,  0,  0,  0, -2,
         0,  0,  0,  0,  0,  0,
     ];
-    assert(info.size == DataWidth);
+    mh.abortIf(info.size != DataWidth, "Number of processes must be equal to the matrix dimension");
+    static assert(AData.length == DataWidth^^2);
+    static assert(BData.length == DataWidth^^2);
 
     const root = 0;
-    Matrix!int A;
-    Matrix!int BTraspose;
-    auto actualABuffer = AData.dup;
+    int[] A;
+    int[] BTranspose;
+    int[] scatterReceiveBuffer;
+    mh.IntInt[] reduceBufferA = new mh.IntInt[](DataWidth);
+    mh.IntInt[] reduceBufferB = new mh.IntInt[](DataWidth);
 
-    if (info == root)
+    bool isRoot() { return info.rank == root; }
+    auto rootBufferStartIndex() { return root * DataWidth; }
+
+    if (isRoot)
     {
-        auto actualBBuffer = traspose(BData, DataWidth);
-        A = matrixFromArray(actualABuffer, DataWidth);
-        BTraspose = matrixFromArray(actualBBuffer, DataWidth);
-        printMatrix(A);
-        printMatrix(BTranspose);
-        mh.intraScatterSend(actualABuffer, info);
-        mh.intraScatterSend(actualBBuffer, info);
+        A = AData.dup;
+        BTranspose = transpose(BData, DataWidth);
+        printMatrix(A, DataWidth);
+        printMatrix(BTranspose, DataWidth);
+        scatterReceiveBuffer = A[rootBufferStartIndex .. (rootBufferStartIndex + DataWidth)];
     }
     else
     {
-        auto actualABuffer = new int[DataWidth];
-        auto actualBBuffer = new int[DataWidth];
-        A = matrixFromArray(actualABuffer, DataWidth);
-        BTranspose = matrixFromArray(actualBBuffer, DataWidth);
-        mh.intraScatterRecv(actualABuffer, root);
-        mh.intraScatterRecv(actualBBuffer, root);
+        scatterReceiveBuffer = new int[](DataWidth);
+    }
+
+    // Sort of does this, except does no copying at root.
+    // MPI_Scatter(
+    //    A.ptr, scatterReceiveBuffer.length, MPI_INT, 
+    //    scatterReceiveBuffer.ptr, scatterReceiveBuffer.length, MPI_INT, 
+    //    root, MPI_COMM_WORLD);
+    if (isRoot)
+        mh.intraScatterSend(A, info);
+    else
+        mh.intraScatterRecv(scatterReceiveBuffer, root);
+
+
+    // Now interveave the indices with the input data in the reduce buffer.
+    void interweaveReduceBuffer(mh.IntInt[] buffer)
+    {
+        foreach (i, ref pair; buffer)
+        {
+            pair.rank  = info.rank;
+            pair.value = scatterReceiveBuffer[i];
+        }
+    }
+    interweaveReduceBuffer(reduceBufferA);
+
+    // Reduce in-place. Does this, but with compile-time deduction of some parameters:
+    // MPI_Reduce(reduceBuffer.ptr, 
+    //     MPI_IN_PLACE, reduceBuffer.length, MPI_INT2, MPI_MAXLOC, 
+    //     root, MPI_COMM_WORLD);
+    mh.intraReduce(reduceBufferA, MPI_MAXLOC, root);
+
+    void printReduceBuffer(string matrixName, mh.IntInt[] buffer)
+    {
+        writeln("Reduce buffer data for matrix`", matrixName, "`:");
+        foreach (i, pair; buffer)
+            writeln("Maximum column in row ", i, " is ", pair.rank, " with value ", pair.value);
+    }
+
+    if (isRoot)
+    {
+        printReduceBuffer("A", reduceBufferA);
+        scatterReceiveBuffer = BTranspose[rootBufferStartIndex .. (rootBufferStartIndex + DataWidth)];
+        mh.intraScatterSend(BTranspose, info);
+    }
+    else
+    {
+        mh.intraScatterRecv(scatterReceiveBuffer, root);
+    }
+    interweaveReduceBuffer(reduceBufferB);
+    mh.intraReduce(reduceBufferB, MPI_MAXLOC, root);
+
+    if (isRoot)
+    {
+        printReduceBuffer("BTraspose", reduceBufferB);
+
+        int hitCount = 0;
+        foreach (colIndex; 0..DataWidth)
+        foreach (rowIndex; 0..DataWidth)
+        {
+            if (colIndex == reduceBufferB[rowIndex].rank 
+                && rowIndex == reduceBufferA[colIndex].rank)
+            {
+                hitCount++;
+                writeln("Nash Equilibrium: (", reduceBufferA[colIndex], ", ", reduceBufferB[rowIndex], ")."); 
+            }
+        }
+        if (hitCount == 0)
+            writeln("No Nash Equilibrium.");
+    }
+    return 0;
+}
+
+void printMatrix(T)(const(T)[] matrix, size_t width)
+{
+    const height = matrix.length / width;
+
+    import std.stdio : write;
+    foreach (rowIndex; 0..height)
+    foreach (colIndex; 0..width)
+    {
+        write(matrix[rowIndex * width + colIndex]);
+        if (colIndex != width - 1)
+            write(" ");
+        else
+            write("\n");
     }
 }
 
-void printMatrix(M)(const(M) matrix)
+void printMatrix(M)(const(M) matrix) 
 {
     import std.stdio : write;
     foreach (rowIndex; 0..matrix.height)
@@ -67,9 +151,9 @@ void printMatrix(M)(const(M) matrix)
     }
 }
 
-T[] traspose(T)(const(T)[] elements, size_t width)
+T[] transpose(T)(const(T)[] elements, size_t width)
 {
-    auto height = elements.length / height;
+    auto height = elements.length / width;
     auto result = new T[](width * height);
     foreach (rowIndex; 0..height)
     foreach (colIndex; 0..width)
@@ -221,7 +305,7 @@ struct Range
 
 import std.algorithm.mutation : swap;
 
-struct Matrix(T, bool Transposed = false)
+struct Matrix(T, bool Transposed = false, bool IsSubmatrix = false)
 {
     T* array;
 
@@ -234,28 +318,47 @@ struct Matrix(T, bool Transposed = false)
     /// The height of the source matrix, as seen after transposition.
     size_t allHeight() const { return Transposed ? _width  : _height; }
 
-    Range _rowRange;
-    Range _colRange;
-
-    /// The width of the matrix, as available to the user.
-    /// The user may provide as the second index the values in range [0, width).
-    size_t width()  const { return Transposed ? _rowRange.length : _colRange.length; }
-    /// The height of the matrix, as available to the user.
-    /// The user may provide as the first index the values in range [0, height).
-    size_t height() const { return Transposed ? _colRange.length : _rowRange.length; }
-
-    inout(Matrix!(T, !Transposed)) transposed() inout
+    static if (IsSubmatrix)
     {
-        return typeof(return)(array, _width, _height, _rowRange, _colRange);
+        Range _rowRange;
+        Range _colRange;
+        
+        /// The width of the matrix, as available to the user.
+        /// The user may provide as the second index the values in range [0, width).
+        size_t width()  const { return Transposed ? _rowRange.length : _colRange.length; }
+        /// The height of the matrix, as available to the user.
+        /// The user may provide as the first index the values in range [0, height).
+        size_t height() const { return Transposed ? _colRange.length : _rowRange.length; }
+    }
+    else
+    {
+        size_t width()  const { return allWidth();  }
+        size_t height() const { return allHeight(); }
+    }
+
+    inout(Matrix!(T, !Transposed, IsSubmatrix)) transposed() inout
+    {
+        static if (IsSubmatrix)
+            return typeof(return)(array, _width, _height, _rowRange, _colRange);
+        else
+            return typeof(return)(array, _width, _height);
     }
 
     /// Returns the internal index into the underlying array.
     size_t getLinearIndex(size_t rowIndex, size_t colIndex) const
     {
-        assert(rowIndex >= 0 && rowIndex < _rowRange.length); 
-        assert(colIndex >= 0 && colIndex < _colRange.length); 
-        rowIndex = rowIndex + _rowRange[0]; 
-        colIndex = colIndex + _colRange[0];
+        static if (IsSubmatrix)
+        {
+            assert(rowIndex >= 0 && rowIndex < _rowRange.length); 
+            assert(colIndex >= 0 && colIndex < _colRange.length); 
+            rowIndex = rowIndex + _rowRange[0]; 
+            colIndex = colIndex + _colRange[0];
+        }
+        else
+        {
+            assert(rowIndex >= 0 && rowIndex < _height);
+            assert(colIndex >= 0 && colIndex < _width);
+        }
         return rowIndex * _width + colIndex;
     }
 
@@ -273,10 +376,16 @@ struct Matrix(T, bool Transposed = false)
     // m[a, b..c] = m[a .. a + 1, b..c]
     auto inout opIndex(size_t rowIndex, size_t[2] cols) { return opIndex([rowIndex, rowIndex + 1], cols); }
 
-    inout(Matrix!(T, Transposed)) opIndex(size_t[2] row, size_t[2] col) inout
+    inout(Matrix!(T, Transposed, true)) opIndex(size_t[2] row, size_t[2] col) inout
     {
         if (Transposed)
             swap(row, col);
+
+        static if (!IsSubmatrix)
+        {
+            const _rowRange = Range([0, height - 1]);
+            const _colRange = Range([0, width - 1]);
+        }
             
         Range newRowRange = Range([_rowRange[0] + row[0], _rowRange[0] + row[1] - 1]);
         assert(_rowRange.contains(newRowRange));
@@ -294,10 +403,10 @@ struct Matrix(T, bool Transposed = false)
     }
 }
 
-Matrix!T matrixFromArray(T)(T[] array, size_t width)
+Matrix!(T) matrixFromArray(T)(T[] array, size_t width)
 {
     auto height = array.length / width;
-    return Matrix!T(array.ptr, width, height, Range([0, height - 1]), Range([0, width - 1]));
+    return Matrix!(T)(array.ptr, width, height);
 }
 
 unittest
@@ -322,19 +431,19 @@ unittest
     assert(matrixT[1, 1] == 5);
     assert(matrixT[1, 2] == 8);
 
-    matrix = matrix[1..$, 1..$];
+    auto matrixSlice = matrix[1..$, 1..$];
 
-    assert(matrix[0, 0] == 5);
-    assert(matrix[0, 1] == 6);
-    assert(matrix[1, 0] == 8);
-    assert(matrix[1, 1] == 9);
+    assert(matrixSlice[0, 0] == 5);
+    assert(matrixSlice[0, 1] == 6);
+    assert(matrixSlice[1, 0] == 8);
+    assert(matrixSlice[1, 1] == 9);
 
-    matrixT = matrix.transposed;
+    auto matrixSliceT = matrixSlice.transposed;
 
-    assert(matrixT[0, 0] == 5);
-    assert(matrixT[0, 1] == 8);
-    assert(matrixT[1, 0] == 6);
-    assert(matrixT[1, 1] == 9);
+    assert(matrixSliceT[0, 0] == 5);
+    assert(matrixSliceT[0, 1] == 8);
+    assert(matrixSliceT[1, 0] == 6);
+    assert(matrixSliceT[1, 1] == 9);
 
     matrix = matrixFromArray([ 1, 2, 3, 3, 2, 1,
                                4, 5, 6, 6, 5, 4,
@@ -361,11 +470,13 @@ unittest
     assert(matrixA[0, 0] == 6);
     assert(matrixA[0, 1] == 5);
 
-    matrixT = matrixA.transposed;
+    matrixSliceT = matrixA.transposed;
 
     // [   6, 9, 
     //     5, 8, 
     //     4, 7, ];
+    import std.stdio;
+    writeln(matrixT[0, 0]);
     assert(matrixT[0, 0] == 6);
     assert(matrixT[1, 1] == 8);
     assert(matrixT[2, 1] == 7);
@@ -387,13 +498,13 @@ unittest
 }
 unittest
 {
-    const(Matrix!int) constMatrix;
-    static assert(is(typeof(constMatrix[0..1, 0..2]) == const(Matrix!int)));
-    immutable(Matrix!int) immutableMatrix;
+    const(Matrix!(int, false, true)) constMatrix;
+    static assert(is(typeof(constMatrix[0..1, 0..2]) == const(Matrix!(int, false, true))));
+    immutable(Matrix!(int, false, true)) immutableMatrix;
     static assert(is(typeof(immutableMatrix[0..0, 0]) == typeof(immutableMatrix)));
     static assert(is(typeof(immutableMatrix.array) == immutable(int*)));
     static assert(is(typeof(immutableMatrix[0, 0]) == immutable(int)));
-    static assert(is(typeof(immutableMatrix.transposed()) == immutable(Matrix!(int, true))));
+    static assert(is(typeof(immutableMatrix.transposed()) == immutable(Matrix!(int, true, true))));
     static assert(!__traits(compiles, constMatrix[0, 0] = 2));
     static assert(!__traits(compiles, immutableMatrix[0, 0] = 2));
 }

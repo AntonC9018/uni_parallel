@@ -368,12 +368,12 @@ struct Operation(alias operation)
 {
     static if (is(operation == function))
     {
-        MPI_Op opHandle;
+        MPI_Op handle;
         mixin OperationInfo!operation;
     }
     else
     {
-        MPI_Op opHandle() { return operation; }
+        static MPI_Op handle() { return operation; }
         enum HasRequiredType = false;
     }
 }
@@ -441,4 +441,20 @@ int intraReduce(T, Op)(T buffer, Op op, int root, MPI_Comm comm = MPI_COMM_WORLD
     alias bufferInfo = BufferInfo!buffer;
     static assert(!Op.HasRequiredType || is(bufferInfo.ElementType == Op.RequiredType));
     return MPI_Reduce(bufferInfo.ptr, MPI_IN_PLACE, bufferInfo.length, bufferInfo.datatype, op.handle, root, comm);
+}
+
+int intraReduce(T)(T buffer, MPI_Op opHandle, int root, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    alias bufferInfo = BufferInfo!buffer;
+    return MPI_Reduce(bufferInfo.ptr, MPI_IN_PLACE, bufferInfo.length, bufferInfo.datatype, opHandle, root, comm);
+}
+
+void abortIf(bool condition, lazy string message = null, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    if (condition)
+    {
+        import std.stdio : writeln;
+        writeln("The process has been aborted:" ~ message);
+        MPI_Abort(comm, 1);
+    }
 }
