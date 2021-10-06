@@ -80,6 +80,26 @@ int main()
     else version(KeyboardInput)
     {
         char[] keyboardInputBuffer;
+        int readInt()
+        {
+            import std.stdio : readln, stdin;
+            import std.conv : to;
+            import std.string : strip;
+            while (true)
+            {
+                try
+                {
+                    readln(keyboardInputBuffer);
+                    int result = keyboardInputBuffer[].strip.to!int;
+                    return result;
+                }
+                catch (Exception err)
+                {
+                }
+            }
+            return 0;
+        }
+
         void inputForEveryProcess(scope void delegate() loop)
         {
             foreach (processIndex; 0..info.size)
@@ -96,12 +116,9 @@ int main()
         {
             foreach (colIndex, ref pair; reduceBufferA)
             {
-                import std.stdio : write, readln;
-                import std.conv : to;
-                write("Enter A[", info.rank, ", ", colIndex, "] = ");
-                readln(keyboardInputBuffer);
-                pair.value = inputBuffer.to!int;
-                pair.rank = rank;
+                writeln("Enter A[", info.rank, ", ", colIndex, "] = ");
+                pair.value = readInt();
+                pair.rank = info.rank;
             }
         });
     }
@@ -121,11 +138,11 @@ int main()
     // MPI_Reduce(reduceBuffer.ptr, 
     //     MPI_IN_PLACE, reduceBuffer.length, MPI_INT2, MPI_MAXLOC, 
     //     root, MPI_COMM_WORLD);
-    mh.intraReduce(reduceBufferA, MPI_MAXLOC, root);
+    mh.intraReduce(reduceBufferA, MPI_MAXLOC, info.rank, root);
 
     void printReduceBuffer(string matrixName, mh.IntInt[] buffer)
     {
-        writeln("Reduce buffer data for matrix`", matrixName, "`:");
+        writeln("Reduce buffer data for matrix `", matrixName, "`:");
         foreach (colIndex, pair; buffer)
             writeln("Maximum element's row index in the column ", colIndex, " is ", pair.rank, " with value ", pair.value);
     }
@@ -156,12 +173,9 @@ int main()
         {
             foreach (colIndex, ref pair; reduceBufferB)
             {
-                import std.stdio : write, readln;
-                import std.conv : to;
-                write("Enter B[", colIndex, ", ", info.rank, "] = ");
-                readln(keyboardInputBuffer);
-                pair.value = keyboardInputBuffer.to!int;
-                pair.rank = rank;
+                writeln("Enter B[", colIndex, ", ", info.rank, "] = ");
+                pair.value = readInt();
+                pair.rank = info.rank;
             }
         });
     }
@@ -174,7 +188,7 @@ int main()
             pair.rank = rank;
         }
     }
-    mh.intraReduce(reduceBufferB, MPI_MAXLOC, root);
+    mh.intraReduce(reduceBufferB, MPI_MAXLOC, info.rank, root);
 
     if (isRoot)
     {
@@ -189,7 +203,7 @@ int main()
         {
             auto colIndexB = reduceBufferB[rowIndexB].rank;
             auto rowIndexA = reduceBufferA[colIndexA].rank;
-            if (colIndexA == colIndexB && rowIndexA == colIndexB)
+            if (colIndexA == colIndexB && rowIndexA == rowIndexB)
             {
                 hitCount++;
                 writeln("Nash Equilibrium: (", colIndexA, ", ", rowIndexA, ")."); 

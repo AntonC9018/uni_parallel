@@ -8,6 +8,8 @@ A realizat: **Curmanschii Anton, IA1901**
   - [Matrice](#matrice)
   - [1.a) Procesul 0 inițializează și distribuie.](#1a-procesul-0-inițializează-și-distribuie)
   - [1.b) Fiecare proces își inițializează linia din matrice.](#1b-fiecare-proces-își-inițializează-linia-din-matrice)
+  - [Fără `MPI_Reduce`](#fără-mpi_reduce)
+  - [Executarea](#executarea)
 
 ## Sarcina
 
@@ -243,7 +245,7 @@ $$
     \begin{cases} 
       (0, 0), (1, 1), (2, 2), (3, 3), (0, 4), \\\\ 
       (1, 4), (2, 4), (3, 4), (4, 4), (0, 5), \\\\ 
-      (1, 5),  (2, 5), (3, 5), (4, 5) 
+      (1, 5), (2, 5), (3, 5), (4, 5) 
     \end{cases}
   \right \\}
 $$
@@ -271,10 +273,10 @@ Atunci $ NE = LineGr \cap ColGr = \\{ (2, 2), (3, 3), (4, 4) \\} $.
 - a. Eliminarea, în paralel, din matricea $A$ și $B$ a liniilor care sunt (strict) dominate în matricea $A$ și din matricea 
 $A$ și $B$ a coloanelor care sunt (strict) dominate în matricea $B$. 
 
-- b. Pentru orice proces $ t $ se determina submatricele $ {SubA}^t $ și $ {SubB}^t $.
+- b. Pentru orice proces $ t $ se determină submatricele $ {SubA}^t $ și $ {SubB}^t $.
 
 - c. Fiecare proces $ t $ determină $i^\star (j_k)$ și $j^\star (i_k)$ pentru orice $k$.  
-  Pentru aceasta se va folosi funcția `MPI_Reduce` și operația `ALLMAXLOC` (în cazul utilizării `MAXALLOC` rezultatele pot fi incorecte) care determină toate indicile elementelor maximale și este creată cu ajutorul funcției MPI `MPI_Op_create`. 
+  Pentru aceasta se va folosi funcția `MPI_Reduce` și operația `ALLMAXLOC` (în cazul utilizării `MAXLOC` rezultatele pot fi incorecte) care determină toate indicile elementelor maximale și este creată cu ajutorul funcției MPI `MPI_Op_create`. 
   După procesul $ t $ determină și în indici globali, adică indicii elementelor din matricea A și B. 
 
 - d. Procesul cu rankul 0 va determina mulțimea de situații Nash de echilibru care este $ NE = (\cup _ t {LineGr} ^ t) \cap (\cup _ t {ColGr} ^ t) $.
@@ -961,12 +963,12 @@ interweaveReduceBuffer(reduceBufferA);
 
 Acum funcția Reduce. 
 Tot am definit un wrapper care determină tipul și lungimea buferului din tipurile parametrilor.
-Iarăși folosim `MPI_IN_PLACE` pentru `outputBuffer` ca să nu alocăm un bufer nou pentru aceasta în root.
+Iarăși folosim `MPI_IN_PLACE` pentru parametrul `sendBuf` la root ca să nu alocăm un bufer nou pentru aceasta în root.
 ```d
-int intraReduce(T)(T buffer, MPI_Op opHandle, int root, MPI_Comm comm = MPI_COMM_WORLD)
+int intraReduce(T)(T buffer, MPI_Op opHandle, int rank, int root, MPI_Comm comm = MPI_COMM_WORLD)
 {
     alias bufferInfo = BufferInfo!buffer;
-    return MPI_Reduce(bufferInfo.ptr, MPI_IN_PLACE, bufferInfo.length, bufferInfo.datatype, opHandle, root, comm);
+    return MPI_Reduce(rank == root ? MPI_IN_PLACE : bufferInfo.ptr, UnrollBuffer!buffer, opHandle, root, comm);
 }
 ```
 
@@ -999,7 +1001,7 @@ else
 }
 auto reduceBufferB = new mh.IntInt[](DataWidth);
 interweaveReduceBuffer(reduceBufferB);
-mh.intraReduce(reduceBufferB, MPI_MAXLOC, root);
+mh.intraReduce(reduceBufferB, MPI_MAXLOC, info.rank, root);
 
 if (isRoot)
 {
@@ -1017,7 +1019,7 @@ if (isRoot)
     {
         auto colIndexB = reduceBufferB[rowIndexB].rank;
         auto rowIndexA = reduceBufferA[colIndexA].rank;
-        if (colIndexA == colIndexB && rowIndexA == colIndexB)
+        if (colIndexA == colIndexB && rowIndexA == rowIndexB)
         {
             hitCount++;
             writeln("Nash Equilibrium: (", colIndexA, ", ", rowIndexA, ")."); 
@@ -1101,8 +1103,8 @@ else version(KeyboardInput)
                 import std.conv : to;
                 write("Enter A[", processIndex, ", ", colIndex, "] = ");
                 readln(keyboardInputBuffer);
-                pair.value = inputBuffer.to!int;
-                pair.rank = rank;
+                pair.value = keyboardInputBuffer.to!int;
+                pair.rank = info.rank;
             }
         }
         // Apelează MPI_Barrier(MPI_COMM_WORLD)
@@ -1137,8 +1139,8 @@ inputForEveryProcess(
         import std.conv : to;
         write("Enter A[", info.rank, ", ", colIndex, "] = ");
         readln(keyboardInputBuffer);
-        pair.value = inputBuffer.to!int;
-        pair.rank = rank;
+        pair.value = keyboardInputBuffer.to!int;
+        pair.rank = info.rank;
     }
 });
 ```
@@ -1161,3 +1163,191 @@ else version(KeyboardInput)
     });
 }
 ```
+
+### Fără `MPI_Reduce`
+
+Deci vom avea nevoie să simulăm modul în care lucrează `MPI_Reduce` utilizând alte operații de comunicare.
+
+Propun să împărțim procesele în grupuri câte 2.
+Primul proces din grup ar primi datele de la celălalt proces, pe urmă va aplica operația la vectorul săl și vectorul primit de la celălalt proces.
+Acum putem elimina din grupuri celelalte procese, și repetăm.
+
+```d
+// Process 0 gets the result (the values array gets mutated).
+// The input values array most likely will be mutated.
+// Assumes op is commutative.
+void customIntraReduce(T)(T[] values, in InitInfo info, void delegate(const(T)[] input, T[] inputOutput) op)
+{
+    int processesLeft = info.size;
+    const tag = 15;
+
+    // Only half of the processes will be getting values.
+    T[] recvBuffer;
+    if (info.rank <= info.size / 2)
+        recvBuffer = new T[](values.length);
+
+    while (processesLeft > 1)
+    {
+        // Examples:
+        // 0, 1, 2 -> (0, 2), (1, _)        gap = 2, numActive = 2
+        // 0, 1, 2, 3 -> (0, 2), (1, 3)     gap = 2, numActive = 2
+        // 0, 1 -> (0, 1)                   gap = 1, numActive = 1
+
+        // Round up
+        int activeProcessesCount = (processesLeft + 1) / 2;
+
+        // If there's an odd number of processes, the last active does nothing
+        if ((processesLeft & 1) && info.rank == activeProcessesCount - 1)
+        {
+            processesLeft = activeProcessesCount;
+            continue;
+        }
+
+        // We're the first process (the active one) in a group
+        if (info.rank < activeProcessesCount)
+        {
+            // Skip over other processes.
+            int partnerId = activeProcessesCount + info.rank;
+            mh.recv(recvBuffer, partnerId, tag);
+            // Values now contain the result of the operation.
+            op(recvBuffer, values);
+        }
+        // We're the second process in a group
+        else
+        {
+            int partnerId = info.rank - activeProcessesCount;
+            mh.send(values, partnerId, tag);
+            break;
+        }
+
+        processesLeft = activeProcessesCount;
+    }
+}
+```
+
+De exemplu, avem 3 procese, operația max, și inputurile $i$ pentru proces cu rancul $i$.
+
+Primul proces cu rancul 0 intră ciclul, calculează `activeProcessesCount = 2`, trece peste condiția `if ((processesLeft & 1) && info.rank == activeProcessesCount - 1)`.
+Rancul este mai mic decât `activeProcessesCount` (0 < 2), de aceea procede în prima ramură.
+Calculează `partnerId = 0 + 2 = 2` și acum așteaptă buferul de intrare procesului 1.
+
+Al doilea proces intră ciclul, verifică condiția `if ((processesLeft & 1) && info.rank == activeProcessesCount - 1)`, actualizează valoarea lui `processesLeft` la `2` și intră ciclul din nou.
+Acum `activeProcessesCount = 1`, trece peste condiția. 
+Condiția `if (info.rank < activeProcessesCount)` nu se verifică (1 == 1), de aceea intră a doua ramură.
+Procesul calculează `partnerId = 1 - 1 = 0`, și execută `send`.
+Modul de executare nu este necesar sincronizat, de aceea există 2 posibilități: ori procesul se blochează așteptând momentul când partenerul primește datele, ori datele sunt buferizate și prin urmare procesul iese din ciclu și din funcție.
+
+Al treilea proces tot intră în a doua ramură în prima iterare, trimite datele procesului 0 și iese din ciclu.
+
+Procesul 0 aplică operația `max(recvBuff, values) = max(2, 0)`, primind 2 stocat în values.
+Actualizează `processesLeft` la 2, intră din nou în ciclu, calculează `activeProcessesCount = 1`, trece peste `if ((processesLeft & 1) && info.rank == activeProcessesCount - 1)` deoarece `processesLeft` este par.
+Intră în prima ramură (0 < 1), `partnerId = 0 + 1 = 1`, primește datele de la procesul 1 care deja probabil a terminat execuția, execută `max(1, 2) = 2`.
+Procesul actualizează `processesLeft` la 1, și iese din cauza condiției ciclului `while (processesLeft > 1)`.
+
+Pentru a preveni invalidarea buferului de ieșire la fiecare proces, am putea lucra cu `recvBuffer`, copiindu-l în `values` numai pentru procesul 0.
+
+Datorită naturii recursive a acestui algoritm ușor se observă că el va lucra și pentru un număr mai mare de procese.
+
+> Notez o detalie despre cod. În D este normal să nu șterg buferuri intemediari, deoarece D are un GC (opțional, pornit după default). 
+> În principiu am putea șterge acest bufer cu `scope(exit) delete recvBuffer;` sau chiar să utilizez `malloc` și `free`, sau mai bine să utilizăm un alocator personalizat, însă nu-mi complic sarcina.
+
+Funcția realizată este un "drop-in replacement" pentru `mh.intraReduce` (cu excepția faptului că presupune că root-ul este 0):
+```d
+// Am schimba
+mh.intraReduce(reduceBufferA, MPI_MAXLOC, info.rank, root);
+// la
+mh.intraCustomReduce(reduceBufferA, info, (inputBuffer, inoutBuffer) 
+{ 
+    import std.agorithm.comparison : max;
+    foreach (i, ref elem; inoutBuffer)
+        elem = max(elem, inputBuffer[i]);
+});
+```
+
+### Executarea 
+
+Serverul m-a scos din ban, deci la sfărșit pot testa programele.
+
+```
+$ ./compile.sh lab1 -version=RootDistributesValues
+$ mpirun -np 6 lab1.out
+4 0 0 0 0 0
+3 3 0 0 0 0
+2 2 2 0 0 0
+1 1 1 1 0 0
+0 0 0 0 0 0
+-1 -1 -1 -1 -1 -1
+0 0 0 0 0 0
+2 0 0 0 0 0
+1 1 0 0 0 0
+0 0 0 0 0 0
+-1 -1 -1 -1 0 0
+-2 -2 -2 -2 -2 0
+Reduce buffer data for matrix `A`:
+Maximum element's row index in the column 0 is 0 with value 4
+Maximum element's row index in the column 1 is 1 with value 3
+Maximum element's row index in the column 2 is 2 with value 2
+Maximum element's row index in the column 3 is 3 with value 1
+Maximum element's row index in the column 4 is 0 with value 0
+Maximum element's row index in the column 5 is 0 with value 0
+Reduce buffer data for matrix `BTraspose`:
+Maximum element's row index in the column 0 is 1 with value 2
+Maximum element's row index in the column 1 is 2 with value 1
+Maximum element's row index in the column 2 is 0 with value 0
+Maximum element's row index in the column 3 is 0 with value 0
+Maximum element's row index in the column 4 is 0 with value 0
+Maximum element's row index in the column 5 is 0 with value 0
+No Nash Equilibrium.
+```
+
+Cum ați explicat la lecție de laborator, algoritmul nu lucrează pentru orice input, deoarece calculăm numai un maxim în fiecare lini (coloană). 
+Soluția este (2, 2), (3, 3), (4, 4), însă în toate cazurile în matricea B un indice precedent ia prioritate.
+
+Pentru al doilea variant de program cu input de la tăstătură am modificat un pic codul inițial cu input, deoarece nu lucra corect (MPI-ul nu transmite output-ul programei dacă nu scrieți și un newline în finalul buferului, readln returnează buferul cu newline, dacă dați un input incorect programul nici nu se termină, deoarece MPI nu înțelege excepții, etc., chestii mici).
+
+Clasicul `readInt()`:
+```d
+char[] keyboardInputBuffer;
+int readInt()
+{
+    import std.stdio : readln, stdin;
+    import std.conv : to;
+    import std.string : strip;
+    while (true)
+    {
+        try
+        {
+            readln(keyboardInputBuffer);
+            int result = keyboardInputBuffer[].strip.to!int;
+            return result;
+        }
+        catch (Exception err)
+        {
+        }
+    }
+    return 0;
+}
+```
+
+```
+$ ./compile.sh lab1 -version=KeyboardInput   
+$ mpirun -np 6 lab1.out                      
+Enter A[0, 0] =
+1
+Enter A[0, 1] =
+2
+Enter A[0, 2] =
+3
+Enter A[0, 3] =
+4
+Enter A[0, 4] =
+5
+Enter A[0, 5] =
+6
+Enter A[1, 0] =
+1
+2
+3
+```
+ 
+Nu lucrează. Clar că aceasta este deoarece input-ul merge la primul proces. Asta am anticipat.

@@ -436,17 +436,18 @@ int freeOp(Op)(Op op)
 // }
 
 /// Op must be duck-compatible with Operation!func.
-int intraReduce(T, Op)(T buffer, Op op, int root, MPI_Comm comm = MPI_COMM_WORLD)
+int intraReduce(T, Op)(T buffer, Op op, int rank, int root, MPI_Comm comm = MPI_COMM_WORLD)
+    if (__traits(hasMember, op, "handle"))
 {
     alias bufferInfo = BufferInfo!buffer;
     static assert(!Op.HasRequiredType || is(bufferInfo.ElementType == Op.RequiredType));
-    return MPI_Reduce(bufferInfo.ptr, MPI_IN_PLACE, bufferInfo.length, bufferInfo.datatype, op.handle, root, comm);
+    return MPI_Reduce(rank == root ? MPI_IN_PLACE : bufferInfo.ptr, UnrollBuffer!buffer, op.handle, root, comm);
 }
 
-int intraReduce(T)(T buffer, MPI_Op opHandle, int root, MPI_Comm comm = MPI_COMM_WORLD)
+int intraReduce(T)(T buffer, MPI_Op opHandle, int rank, int root, MPI_Comm comm = MPI_COMM_WORLD)
 {
     alias bufferInfo = BufferInfo!buffer;
-    return MPI_Reduce(bufferInfo.ptr, MPI_IN_PLACE, bufferInfo.length, bufferInfo.datatype, opHandle, root, comm);
+    return MPI_Reduce(rank == root ? MPI_IN_PLACE : bufferInfo.ptr, UnrollBuffer!buffer, opHandle, root, comm);
 }
 
 void abortIf(bool condition, lazy string message = null, MPI_Comm comm = MPI_COMM_WORLD)
@@ -456,5 +457,56 @@ void abortIf(bool condition, lazy string message = null, MPI_Comm comm = MPI_COM
         import std.stdio : writeln;
         writeln("The process has been aborted: ", message);
         MPI_Abort(comm, 1);
+    }
+}
+
+// Process 0 gets the result (the values array gets mutated).
+// The input values array most likely will be mutated.
+// Assumes op is commutative.
+void customIntraReduce(T)(T[] values, in InitInfo info, void delegate(const(T)[] input, T[] inputOutput) op)
+{
+    int processesLeft = info.size;
+    const tag = 15;
+
+    // Only half of the processes will be getting values.
+    T[] recvBuffer;
+    if (info.rank <= info.size / 2)
+        recvBuffer = new T[](values.length);
+
+    while (processesLeft > 1)
+    {
+        // Examples:
+        // 0, 1, 2 -> (0, 2), (1, _)        gap = 2, numActive = 2
+        // 0, 1, 2, 3 -> (0, 2), (1, 3)     gap = 2, numActive = 2
+        // 0, 1 -> (0, 1)                   gap = 1, numActive = 1
+
+        // Round up
+        int activeProcessesCount = (processesLeft + 1) / 2;
+
+        // If there's an odd number of processes, the last active does nothing
+        if ((processesLeft & 1) && info.rank == activeProcessesCount - 1)
+        {
+            processesLeft = activeProcessesCount;
+            continue;
+        }
+
+        // We're the first process (the active one) in a group
+        if (info.rank < activeProcessesCount)
+        {
+            // Skip over other processes.
+            int partnerId = activeProcessesCount + info.rank;
+            mh.recv(recvBuffer, partnerId, tag);
+            // Values now contain the result of the operation.
+            op(recvBuffer, values);
+        }
+        // We're the second process in a group
+        else
+        {
+            int partnerId = info.rank - activeProcessesCount;
+            mh.send(values, partnerId, tag);
+            break;
+        }
+
+        processesLeft = activeProcessesCount;
     }
 }
