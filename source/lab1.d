@@ -31,14 +31,14 @@ int main()
     mh.abortIf(info.size != DataWidth, "Number of processes must be equal to the matrix dimension");
 
     const root = 0;
-
     bool isRoot() { return info.rank == root; }
-    auto rootBufferStartIndex() { return root * DataWidth; }
 
     auto reduceBufferA = new mh.IntInt[](DataWidth);
 
     version(RootDistributesValues)
     {
+        auto rootBufferStartIndex() { return root * DataWidth; }
+
         int[] A;
         int[] BTranspose;
         int[] scatterReceiveBuffer;
@@ -77,13 +77,43 @@ int main()
         }
         interweaveReduceBuffer(reduceBufferA);
     }
+    else version(KeyboardInput)
+    {
+        char[] keyboardInputBuffer;
+        void inputForEveryProcess(scope void delegate() loop)
+        {
+            foreach (processIndex; 0..info.size)
+            {
+                if (processIndex == info.rank)
+                {
+                    loop();
+                }
+                mh.barrier();
+            }
+        }
+
+        inputForEveryProcess(
+        {
+            foreach (colIndex, ref pair; reduceBufferA)
+            {
+                import std.stdio : write, readln;
+                import std.conv : to;
+                write("Enter A[", info.rank, ", ", colIndex, "] = ");
+                readln(keyboardInputBuffer);
+                pair.value = inputBuffer.to!int;
+                pair.rank = rank;
+            }
+        });
+    }
     else
     {
-        // Initialize buffer for A
-        foreach (colIndex, ref pair; reduceBufferA)
+        void initializeA()
         {
-            pair.value = AData[colIndex + rank * DataWidth];
-            pair.rank = rank;
+            foreach (colIndex, ref pair; reduceBufferA)
+            {
+                pair.value = AData[colIndex + rank * DataWidth];
+                pair.rank = rank;
+            }
         }
     }
 
@@ -106,7 +136,7 @@ int main()
     }
 
     auto reduceBufferB = new mh.IntInt[](DataWidth);
-    
+
     version(RootDistributesValues)
     {
         if (isRoot)
@@ -120,7 +150,22 @@ int main()
         }
         interweaveReduceBuffer(reduceBufferB);
     }
-    else
+    else version(KeyboardInput)
+    {
+        inputForEveryProcess(
+        {
+            foreach (colIndex, ref pair; reduceBufferB)
+            {
+                import std.stdio : write, readln;
+                import std.conv : to;
+                write("Enter B[", colIndex, ", ", info.rank, "] = ");
+                readln(keyboardInputBuffer);
+                pair.value = keyboardInputBuffer.to!int;
+                pair.rank = rank;
+            }
+        });
+    }
+    else 
     {
         // Initialize buffer for B
         foreach (rowIndex, ref pair; reduceBufferB)

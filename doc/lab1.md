@@ -799,7 +799,7 @@ static assert(AData.length == DataWidth^^2);
 static assert(BData.length == DataWidth^^2);
 ```
 
-Evident, pentru acest caz simplist se consideră că matricii sunt pătratici și de o lungime fixă.
+Evident, pentru acest caz simplist se consideră că matricile sunt pătratice și de o lungime fixă.
 În acest caz fiecare proces va primi câte o linie sau câte o coloană (o singură).
 De aceea numărul de procese trebuie să fie numaidecât egal cu numărul de coloane (linii).
 ```d
@@ -817,7 +817,7 @@ void abortIf(bool condition, lazy string message = null, MPI_Comm comm = MPI_COM
 abortIf(info.size != DataWidth, "Number of processes must be equal to the matrix dimension");
 ```
 
-Pentru cazul simplist trebuie să inițializez matricii de către procesul cu rancul 0.
+Pentru cazul simplist trebuie să inițializez matricile de către procesul cu rancul 0.
 Aici deja devine clar în ce context s-a trebuit transpusul — pentru a transpune B când o inițializăm.
 Deci ideea mea cu transpusul virtual până când nu este tare utilă.
 
@@ -1079,4 +1079,85 @@ else
 }
 ```
 
-Restul codului rămâne aproape neschimbat. Ca să nu-l inserez din nou, uitați-vă după [link]():
+Restul codului rămâne aproape neschimbat. Ca să nu-l inserez din nou, uitați-vă după [link](https://github.com/AntonC9018/uni_parallel/blob/2324ace89f713a46bd106baf7fbcf13bbf173399/source/lab1.d#L23-L157).
+
+Evident, codul la moment admite doar matrici pătratice.
+Însă n-ar fi atât de greu de modificat codul ca să permită matrici de dimensiuni arbitrari (am scris deja un wrapper pentru matrici cu indexarea deplasată).
+
+Acum facem cu inputul de la tăstătură. 
+Aici nu știu dacă ar lucra dacă luăm input de la mai multe procese (și nu am posibilitate să-mi verific codul), însă, conceptual, am avea un ciclu unde vom trece prin fiecare proces, și dacă rancul lui este egal cu variabila de iterare, vom citi o linie de valori.
+
+```d
+else version(KeyboardInput)
+{
+    char[] keyboardInputBuffer;
+    foreach (processIndex; 0..info.size)
+    {
+        if (processIndex == info.rank)
+        {
+            foreach (colIndex, ref pair; reduceBufferA)
+            {
+                import std.stdio : write, readln;
+                import std.conv : to;
+                write("Enter A[", processIndex, ", ", colIndex, "] = ");
+                readln(keyboardInputBuffer);
+                pair.value = inputBuffer.to!int;
+                pair.rank = rank;
+            }
+        }
+        // Apelează MPI_Barrier(MPI_COMM_WORLD)
+        mh.barrier();
+    }
+}
+```
+
+Putem refactoriza acest ciclu într-o funcție, deoarece o vom mai utiliza. 
+
+```d
+char[] keyboardInputBuffer;
+// `delegate` înseamnă un pointer la funcție + context (de fapt variabilele lui main).
+// `scope` înseamnă că contextul nu va fi copiat pe heap.
+void inputForEveryProcess(scope void delegate() loop)
+{
+    foreach (processIndex; 0..info.size)
+    {
+        if (processIndex == info.rank)
+        {
+            loop();
+        }
+        mh.barrier();
+    }
+}
+
+inputForEveryProcess(
+{
+    foreach (colIndex, ref pair; reduceBufferA)
+    {
+        import std.stdio : write, readln;
+        import std.conv : to;
+        write("Enter A[", info.rank, ", ", colIndex, "] = ");
+        readln(keyboardInputBuffer);
+        pair.value = inputBuffer.to!int;
+        pair.rank = rank;
+    }
+});
+```
+
+Și inițializarea pentru B:
+```d
+else version(KeyboardInput)
+{
+    inputForEveryProcess(
+    {
+        foreach (colIndex, ref pair; reduceBufferB)
+        {
+            import std.stdio : write, readln;
+            import std.conv : to;
+            write("Enter B[", colIndex, ", ", info.rank, "] = ");
+            readln(keyboardInputBuffer);
+            pair.value = keyboardInputBuffer.to!int;
+            pair.rank = rank;
+        }
+    });
+}
+```
