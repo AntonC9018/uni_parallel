@@ -31,48 +31,61 @@ int main()
     mh.abortIf(info.size != DataWidth, "Number of processes must be equal to the matrix dimension");
 
     const root = 0;
-    int[] A;
-    int[] BTranspose;
-    int[] scatterReceiveBuffer;
 
     bool isRoot() { return info.rank == root; }
     auto rootBufferStartIndex() { return root * DataWidth; }
 
-    if (isRoot)
-    {
-        A = AData.dup;
-        BTranspose = transpose(BData, DataWidth);
-        printMatrix(A, DataWidth);
-        printMatrix(BTranspose, DataWidth);
-        scatterReceiveBuffer = A[rootBufferStartIndex .. (rootBufferStartIndex + DataWidth)];
-    }
-    else
-    {
-        scatterReceiveBuffer = new int[](DataWidth);
-    }
+    auto reduceBufferA = new mh.IntInt[](DataWidth);
 
-    // Sort of does this, except does no copying at root.
-    // MPI_Scatter(
-    //    A.ptr, scatterReceiveBuffer.length, MPI_INT, 
-    //    scatterReceiveBuffer.ptr, scatterReceiveBuffer.length, MPI_INT, 
-    //    root, MPI_COMM_WORLD);
-    if (isRoot)
-        mh.intraScatterSend(A, info);
-    else
-        mh.intraScatterRecv(scatterReceiveBuffer, root);
-
-
-    // Now interveave the indices with the input data in the reduce buffer.
-    void interweaveReduceBuffer(mh.IntInt[] buffer)
+    version(RootDistributesValues)
     {
-        foreach (i, ref pair; buffer)
+        int[] A;
+        int[] BTranspose;
+        int[] scatterReceiveBuffer;
+
+        if (isRoot)
         {
-            pair.rank  = info.rank;
-            pair.value = scatterReceiveBuffer[i];
+            A = AData.dup;
+            BTranspose = transpose(BData, DataWidth);
+            printMatrix(A, DataWidth);
+            printMatrix(BTranspose, DataWidth);
+            scatterReceiveBuffer = A[rootBufferStartIndex .. (rootBufferStartIndex + DataWidth)];
+        }
+        else
+        {
+            scatterReceiveBuffer = new int[](DataWidth);
+        }
+
+        // Sort of does this, except does no copying at root.
+        // MPI_Scatter(
+        //    A.ptr, scatterReceiveBuffer.length, MPI_INT, 
+        //    scatterReceiveBuffer.ptr, scatterReceiveBuffer.length, MPI_INT, 
+        //    root, MPI_COMM_WORLD);
+        if (isRoot)
+            mh.intraScatterSend(A, info);
+        else
+            mh.intraScatterRecv(scatterReceiveBuffer, root);
+
+        // Now interveave the indices with the input data in the reduce buffer.
+        void interweaveReduceBuffer(mh.IntInt[] buffer)
+        {
+            foreach (i, ref pair; buffer)
+            {
+                pair.rank  = info.rank;
+                pair.value = scatterReceiveBuffer[i];
+            }
+        }
+        interweaveReduceBuffer(reduceBufferA);
+    }
+    else
+    {
+        // Initialize buffer for A
+        foreach (colIndex, ref pair; reduceBufferA)
+        {
+            pair.value = AData[colIndex + rank * DataWidth];
+            pair.rank = rank;
         }
     }
-    auto reduceBufferA = new mh.IntInt[](DataWidth);
-    interweaveReduceBuffer(reduceBufferA);
 
     // Reduce in-place. Does this, but with compile-time deduction of some parameters:
     // MPI_Reduce(reduceBuffer.ptr, 
@@ -92,17 +105,30 @@ int main()
         printReduceBuffer("A", reduceBufferA);
     }
 
-    if (isRoot)
+    auto reduceBufferB = new mh.IntInt[](DataWidth);
+    
+    version(RootDistributesValues)
     {
-        scatterReceiveBuffer = BTranspose[rootBufferStartIndex .. (rootBufferStartIndex + DataWidth)];
-        mh.intraScatterSend(BTranspose, info);
+        if (isRoot)
+        {
+            scatterReceiveBuffer = BTranspose[rootBufferStartIndex .. (rootBufferStartIndex + DataWidth)];
+            mh.intraScatterSend(BTranspose, info);
+        }
+        else
+        {
+            mh.intraScatterRecv(scatterReceiveBuffer, root);
+        }
+        interweaveReduceBuffer(reduceBufferB);
     }
     else
     {
-        mh.intraScatterRecv(scatterReceiveBuffer, root);
+        // Initialize buffer for B
+        foreach (rowIndex, ref pair; reduceBufferB)
+        {
+            pair.value = BData[rowIndex * DataWidth + rank];
+            pair.rank = rank;
+        }
     }
-    auto reduceBufferB = new mh.IntInt[](DataWidth);
-    interweaveReduceBuffer(reduceBufferB);
     mh.intraReduce(reduceBufferB, MPI_MAXLOC, root);
 
     if (isRoot)

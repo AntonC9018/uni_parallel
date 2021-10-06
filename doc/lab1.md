@@ -1,13 +1,13 @@
-# Lucrarea de laborator nr.1 la Programarea Paraelelă și Distribuită
+ Lucrarea de laborator nr.1 la Programarea Paraelelă și Distribuită
 
 Tema: **Jocuri bimatriceale si situatii Nash de echilibru.**
 A realizat: **Curmanschii Anton, IA1901**
 
-- [Lucrarea de laborator nr.1 la Programarea Paraelelă și Distribuită](#lucrarea-de-laborator-nr1-la-programarea-paraelelă-și-distribuită)
-  - [Sarcina](#sarcina)
-  - [Realizarea](#realizarea)
-    - [Matrice](#matrice)
-    - [1.a) Procesul 0 inițializează și distribuie.](#1a-procesul-0-inițializează-și-distribuie)
+- [Sarcina](#sarcina)
+- [Realizarea](#realizarea)
+  - [Matrice](#matrice)
+  - [1.a) Procesul 0 inițializează și distribuie.](#1a-procesul-0-inițializează-și-distribuie)
+  - [1.b) Fiecare proces își inițializează linia din matrice.](#1b-fiecare-proces-își-inițializează-linia-din-matrice)
 
 ## Sarcina
 
@@ -291,7 +291,7 @@ $A$ și $B$ a coloanelor care sunt (strict) dominate în matricea $B$.
   
 2. Paralelizarea la nivel de operații se realizează: 
      - a) Prin utilizarea funcției `MPI_Reduce` și a operațiilor nou create.  
-     - b) Nu se utilizeaza functia `MPI_Reduce`.  
+     - b) Nu se utilizeaza funcția `MPI_Reduce`.  
  
 3. Să se realizeze o analiză comparativă a timpului de execuție a programelor realizate când paralelizarea la nivel 
    de date se realizează in baza punctelor 1.a) si 1.b) 
@@ -1027,3 +1027,56 @@ if (isRoot)
         writeln("No Nash Equilibrium.");
 }
 ```
+
+
+### 1.b) Fiecare proces își inițializează linia din matrice.
+
+Aceasta este foarte ușor de făcut, și cod se va primi și mai simplu decât este la moment.
+Trebuie să scoatem apeluri la MPI_Reduce și să inițializăm vectorii direct din datele de intrare.
+
+Pentru început presupunem că fiecare proces cunoaște datele de intrare apriori, pe urmă vom schimba codul să admită input de la tăstătură.
+
+Ca să nu duplic codul, void realiza programul cu compilarea condițională.
+Voi include codul de inițializare într-un bloc `version`, deci acest cod se va compila numai dacă "versiunea" este definită în timpul compilării (variabila mediului).
+
+```d
+version(RootDistributesValues)
+{
+    // Codul de inițializare ...
+}
+```
+
+În alt caz, se va executa codul nou de inițializare:
+
+```d
+else
+{
+    // Initialize buffer for A
+    foreach (colIndex, ref pair; reduceBufferA)
+    {
+        // AData conține tabloul, cunoscut pentru fiecărui proces.
+        pair.value = AData[colIndex + rank * DataWidth];
+        pair.rank = rank;
+    }
+}
+```
+
+Și asemănător pentru matricea B:
+
+```d
+version(RootDistributesValues)
+{
+    // Inițializarea veche a lui B ...
+}
+else
+{
+    // Initialize buffer for B
+    foreach (rowIndex, ref pair; reduceBufferB)
+    {
+        pair.value = BData[rowIndex * DataWidth + rank];
+        pair.rank = rank;
+    }
+}
+```
+
+Restul codului rămâne aproape neschimbat. Ca să nu-l inserez din nou, uitați-vă după [link]():
