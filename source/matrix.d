@@ -257,7 +257,7 @@ struct Matrix(T, MatrixFlags flags = MatrixFlags.None)
 
 Matrix!(T) matrixFromArray(T)(T[] array, size_t width)
 {
-    auto height = array.length / width;
+    size_t height = width == 0 ? 0 : array.length / width;
     return Matrix!(T)(array.ptr, width, height);
 }
 

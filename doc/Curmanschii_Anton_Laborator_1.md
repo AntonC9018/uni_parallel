@@ -1435,7 +1435,7 @@ enum DataHeight = AData.length / DataWidth;
 const columnIndexStartA = offsetForProcess(info.rank, DataWidth);
 const columnIndexEndA = offsetForProcess(info.rank + 1, DataWidth);
 const numAllocatedColumnsA = cast(size_t) columnIndexEndA - columnIndexStartA;
-int[] ABuffer = new int[](numAllocatedColumnsA);
+int[] ABuffer = new int[](numAllocatedColumnsA * DataHeight);
 // Does not allocate!
 Matrix!int AMatrix = matrixFromArray(ABuffer, numAllocatedColumnsA); 
 foreach (rowIndex; 0..DataHeight)
@@ -1448,7 +1448,7 @@ foreach (colIndex; 0..numAllocatedColumnsA)
 const rowIndexStartB = offsetForProcess(info.rank, DataHeight);
 const rowIndexEndB = offsetForProcess(info.rank + 1, DataHeight);
 const numAllocatedRowsB = cast(size_t) rowIndexEndB - rowIndexStartB;
-int[] BBuffer = new int[](numAllocatedColumnsA);
+int[] BBuffer = new int[](numAllocatedRowsB * DataWidth);
 // Does not allocate!
 Matrix!int BMatrix = matrixFromArray(BBuffer, DataWidth);
 foreach (rowIndex; 0..numAllocatedRowsB)
@@ -1498,19 +1498,16 @@ Matrix!BOOL getMaximums(M)(M matrix)
 auto matrixOfWhetherIndexIsMaximumA = getMaximums(AMatrix.transposed).transposed;
 auto matrixOfWhetherIndexIsMaximumB = getMaximums(BMatrix);
 
-version (unittest)
+if (info.rank == 0)
 {
-    if (info.rank == 0)
-    {
-        assert(matrixOfWhetherIndexIsMaximumA[0, 0] == TRUE);
-        assert(matrixOfWhetherIndexIsMaximumB[0, 1] == TRUE);
-    }
-    else if (info.rank == 1)
-    {
-        // Don't forget it's transposed!
-        assert(matrixOfWhetherIndexIsMaximumA[1, 0] == TRUE);
-        assert(matrixOfWhetherIndexIsMaximumB[0, 2] == TRUE);
-    }
+   assert(matrixOfWhetherIndexIsMaximumA[0, 0] == TRUE);
+   assert(matrixOfWhetherIndexIsMaximumB[0, 1] == TRUE);
+}
+else if (info.rank == 1)
+{
+   // Don't forget it's transposed!
+   assert(matrixOfWhetherIndexIsMaximumA[1, 0] == TRUE);
+   assert(matrixOfWhetherIndexIsMaximumB[0, 2] == TRUE);
 }
 ```
 
@@ -1520,22 +1517,22 @@ Problema evidentă cu aceasta abordare este faptul că primul proces este mereu 
 
 Aceasta ușor se observă dacă încercăm să ne imaginăm ce se întâmplă când algoritmul se execută.
 
-* Primul proces sare peste prima iterare, deoarece `processIndex == 0`.
+* Primul proces verifică datele la el însuși, deoarece `processIndex == 0`.
 * Celelalte procese se blochează la prima iterație, încercând să-i trimită procesului 0 și simultan să primească datele de la el. Deci ele de fapt vor aștepta până când primul procesul intră în ciclul unde `processIndex` este egal cu indexul lor. Prin urmare, procesul cu indexul maxim nu va putea proceda înainte ca procesul 0 să intre ultimul ciclu.
 * Primul proces intră ciclul unde `processIndex == 1`, permitând procesului 1 să-și transmite datele și să procede la următoare iterație.
-* Procesul cu indexul 1 iar se va bloca la a doua iterația, așteptând până când procesul cu rancul 2 își termină comunicare cu procesul cu rancul 0. etc.
+* Procesul cu rancul 1 își va executa iterația 1, iar pe urmă se va bloca la a treia iterație, așteptând până când procesul cu rancul 2 să-și termine comunicarea cu procesul cu rancul 0. etc.
   
 Sper că descrierea problemei a fost clară.
 
 Deci, ideal, am dori să construim perechile unice de indici $ P_i $ pentru fiecare proces $ i $, unde $ P_i[j] = P_j[i] $ pentru fiecare proces.
-De fapt, este o problema cunoscută în matematică și îmi pare că nu există algoritmi eficiente de rezolvare a acestei probleme pentru un număr de procese arbitrar (nu țin minte denumirea problemei de aceea nu pot da link).
+De fapt, este o problema cunoscută în matematică și îmi pare că nu există algoritmi eficienți de rezolvare a acestei probleme pentru un număr de procese arbitrar (nu țin minte denumirea problemei de aceea nu pot da link).
 
 ```d
 // ================================================
 //     Step 3 & 4: Share values & Calculate Nash 
 // ================================================
-size_t maxPossibleAllocatedAColumns = (info.size + DataHeight - 1) / DataHeight;
-size_t maxPossibleAllocatedBRows = (info.size + DataWidth - 1) / DataWidth;
+size_t maxPossibleAllocatedAColumns = (DataWidth + DataWidth - 1) / (info.size);
+size_t maxPossibleAllocatedBRows = (DataHeight + DataHeight - 1) / (info.size);
 // We need to send a rectangular submatrix.
 BOOL[] sendBuffer = new BOOL[](numAllocatedRowsB * maxPossibleAllocatedAColumns);
 BOOL[] receiveBuffer = new BOOL[](maxPossibleAllocatedBRows * numAllocatedColumnsA);
@@ -1544,9 +1541,6 @@ Point[] results;
 
 foreach (processIndex; 0..info.size)
 {
-    if (info.rank == processIndex)
-        continue;
-
     const partnerRowIndexStartB = offsetForProcess(processIndex, DataHeight);
     const partnerRowIndexEndB = offsetForProcess(processIndex + 1, DataHeight);
     const partnerNumAllocatedRowsB = cast(size_t) partnerRowIndexEndB - partnerRowIndexStartB;
@@ -1564,7 +1558,7 @@ foreach (processIndex; 0..info.size)
     foreach (rowIndex; 0..numAllocatedRowsB)
     foreach (colIndex; 0..partnerNumAllocatedColumnsA)
     {
-        sendMatrix[rowIndex, colIndex] = matrixOfWhetherIndexIsMaximumB[rowIndex, colIndex];
+        sendMatrix[rowIndex, colIndex] = matrixOfWhetherIndexIsMaximumB[rowIndex, colIndex + partnerColumnIndexStartA];
     }
 
     auto receiveBufferSlice = receiveBuffer[0..(partnerNumAllocatedRowsB * numAllocatedColumnsA)];
@@ -1578,7 +1572,7 @@ foreach (processIndex; 0..info.size)
         if (matrixOfWhetherIndexIsMaximumA[rowIndex + partnerRowIndexStartB, colIndex] 
             && receiveMatrix[rowIndex, colIndex])
         {
-            results ~= Point(rowIndex, colIndex);
+            results ~= Point(rowIndex + partnerRowIndexStartB, colIndex + columnIndexStartA);
         }
     }
 }
@@ -1607,8 +1601,60 @@ foreach (processIndex; 0..info.size)
 
 ### Executarea (matricea arbitrară, toate punctele de echilibru)
 
-Am intrat pe server și el imediat m-a blocat din nou, de aceea nu pot verifica rezultatele.
+```
+$ ./compile.sh lab1 -version=ArbitraryMatrix matrix.d
+$ mpirun -np 7 lab1.out
+Process 3 found (2, 2)
+Process 4 found (3, 3)
+Process 5 found (4, 4)
+$ mpirun -np 2 lab1.out
+Process 0 found (2, 2)
+Process 1 found (3, 3)
+Process 1 found (4, 4)
+$ mpirun -np 5 lab1.out
+Process 4 found (4, 4)
+Process 2 found (2, 2)
+Process 3 found (3, 3)
+```
 
+Am verificat și cu o matrice de dimensiuni diferite:
+
+```d
+immutable AData = [
+    4,  0,  0,  0,  0,  0,
+    3,  3,  0,  0,  0,  0,
+    2,  2,  2,  0,  0,  0,
+    1,  1,  1,  1,  0,  0,
+    0,  0,  0,  0,  0,  0,
+    -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, // linia 7
+];
+immutable BData = [
+    0,  2,  1,  0, -1, -2,
+    0,  0,  1,  0, -1, -2,
+    0,  0,  0,  0, -1, -2,
+    0,  0,  0,  0, -1, -2,
+    0,  0,  0,  0,  0, -2,
+    0,  0,  0,  0,  0,  0,
+    -1, -1, -1, -1, -1, -1, // linia 7
+];
+```
+
+```
+$ ./compile.sh lab1 -version=ArbitraryMatrix matrix.d  
+$ mpirun -np 1 lab1.out
+Process 0 found (2, 2)                        
+Process 0 found (3, 3)                        
+Process 0 found (4, 4)                        
+$ mpirun -np 2 lab1.out
+Process 0 found (2, 2)                        
+Process 1 found (3, 3)                        
+Process 1 found (4, 4)                        
+$ mpirun -np 3 lab1.out
+Process 2 found (4, 4)                        
+Process 1 found (2, 2)                        
+Process 1 found (3, 3)                        
+```
 
 ### Inputul în procesul 0, distribuirea valorilor la celelalte procese
 
@@ -1674,47 +1720,89 @@ inputForEveryProcess((int processIndex)
 ```
 
 Logica a devenit prea complicată, iar diferă de fapt numai ce bufer umplăm și ce mesaj afișăm.
-Vom face o funcție-șablon care poate fi utilizată în loc de aceasta.
+Vom face o funcție-șablon care poate returnează funcția care poate fi utilizată în loc de aceasta.
 
 ```d
-void integerInputHandlerFunction(string messageFormatString, alias buffer)(int processIndex)
+auto integerInputHandlerFunction(string messageFormatString)(mh.IntInt[] buffer)
 {
-    foreach (i, ref pair; buffer)
+    return (int processIndex)
     {
-        if (processIndex == info.rank)
+        foreach (i, ref pair; buffer)
         {
-            mixin("writeln(", messageString, ");");
-            pair.rank = info.rank;
-        }
+            if (processIndex == info.rank)
+            {
+                mixin("writeln(" ~ messageFormatString ~ ");");
+                pair.rank = info.rank;
+            }
 
-        const tag = 10;
-        if (processIndex == info.rank && info.rank == 0)
-        {
-            pair.value = readInt();
+            const tag = 10;
+            if (processIndex == info.rank && info.rank == 0)
+            {
+                pair.value = readInt();
+            }
+            else if (processIndex == info.rank)
+            {
+                mh.recv(&pair.value, 0, tag);
+            }
+            else // if (info.rank == 0)
+            {
+                auto value = readInt();
+                mh.send(&value, processIndex, tag);
+            }
         }
-        else if (processIndex == info.rank)
-        {
-            mh.recv(&pair.value, 0, tag);
-        }
-        else // if (info.rank == 0)
-        {
-            auto value = readInt();
-            mh.send(&value, processIndex, tag);
-        }
-    }
+    };
 }
 
 inputForEveryProcess(
-    // Îi transmitem șablonului un șir care va fi plasat în `writeln` în cod.
-    &integerInputHandlerFunction!(`"Enter A[", processIndex, ", ", i, "] = "`, reduceBufferA));
+    integerInputHandlerFunction!(`"Enter A[", processIndex, ", ", i, "] = "`)(reduceBufferA));
 ```
 
 Invocarea pentru B tot se simplifică:
 ```d
 inputForEveryProcess(
-    &integerInputHandlerFunction!(`"Enter B[", i, ", ", processIndex, "] = "`, reduceBufferB));
+    integerInputHandlerFunction!(`"Enter B[", i, ", ", processIndex, "] = "`)(reduceBufferB));
 ```
 
 ### Executarea (tăstătură — reparat)
 
-La moment sunt blocat...
+$$
+A = \begin{pmatrix}
+   \underline{0}  &  0  \\\\
+   0              &  \underline{1}
+\end{pmatrix},
+B = \begin{pmatrix}
+   \underline{0}  &  0  \\\\
+   0              &  \underline{1}
+\end{pmatrix},
+NE = \{ (0, 0), (1, 1) \}.
+$$
+
+```
+$ ./compile.sh lab1 -version=KeyboardInput
+Version of Open MPI library is too early.
+$ mpirun -np 2 lab1.out
+Enter A[0, 0] =
+0
+Enter A[0, 1] =
+0
+Enter A[1, 0] =
+0
+Enter A[1, 1] =
+1
+Reduce buffer data for matrix `A`:
+Maximum element's row index in the column 0 is 0 with value 0
+Maximum element's row index in the column 1 is 1 with value 1
+Enter B[0, 0] =
+0
+Enter B[1, 0] =
+0
+Enter B[0, 1] =
+0
+Enter B[1, 1] =
+1
+Reduce buffer data for matrix `BTraspose`:
+Maximum element's row index in the column 0 is 0 with value 0
+Maximum element's row index in the column 1 is 1 with value 1
+Nash Equilibrium: (0, 0).
+Nash Equilibrium: (1, 1).
+```

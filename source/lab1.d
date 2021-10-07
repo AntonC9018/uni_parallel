@@ -7,6 +7,7 @@ immutable AData = [
     1,  1,  1,  1,  0,  0,
     0,  0,  0,  0,  0,  0,
     -1, -1, -1, -1, -1, -1,
+    // -1, -1, -1, -1, -1, -1,
 ];
 immutable BData = [
     0,  2,  1,  0, -1, -2,
@@ -15,7 +16,9 @@ immutable BData = [
     0,  0,  0,  0, -1, -2,
     0,  0,  0,  0,  0, -2,
     0,  0,  0,  0,  0,  0,
+    // -1, -1, -1, -1, -1, -1,
 ];
+static assert(AData.length == BData.length);
 
 version(ArbitraryMatrix) 
 int main()
@@ -44,7 +47,7 @@ int main()
     const columnIndexStartA = offsetForProcess(info.rank, DataWidth);
     const columnIndexEndA = offsetForProcess(info.rank + 1, DataWidth);
     const numAllocatedColumnsA = cast(size_t) columnIndexEndA - columnIndexStartA;
-    int[] ABuffer = new int[](numAllocatedColumnsA);
+    int[] ABuffer = new int[](numAllocatedColumnsA * DataHeight);
     // Does not allocate!
     Matrix!int AMatrix = matrixFromArray(ABuffer, numAllocatedColumnsA); 
     foreach (rowIndex; 0..DataHeight)
@@ -57,7 +60,7 @@ int main()
     const rowIndexStartB = offsetForProcess(info.rank, DataHeight);
     const rowIndexEndB = offsetForProcess(info.rank + 1, DataHeight);
     const numAllocatedRowsB = cast(size_t) rowIndexEndB - rowIndexStartB;
-    int[] BBuffer = new int[](numAllocatedColumnsA);
+    int[] BBuffer = new int[](numAllocatedRowsB * DataWidth);
     // Does not allocate!
     Matrix!int BMatrix = matrixFromArray(BBuffer, DataWidth);
     foreach (rowIndex; 0..numAllocatedRowsB)
@@ -98,26 +101,26 @@ int main()
     auto matrixOfWhetherIndexIsMaximumA = getMaximums(AMatrix.transposed).transposed;
     auto matrixOfWhetherIndexIsMaximumB = getMaximums(BMatrix);
 
-    version (unittest)
+    if (info.size == 6 && DataWidth == 6 && DataHeight == 6)
     {
         if (info.rank == 0)
         {
-            assert(matrixOfWhetherIndexIsMaximumA[0, 0] == TRUE);
-            assert(matrixOfWhetherIndexIsMaximumB[0, 1] == TRUE);
+            mh.abortIf(matrixOfWhetherIndexIsMaximumA[0, 0] != TRUE, "1");
+            mh.abortIf(matrixOfWhetherIndexIsMaximumB[0, 1] != TRUE, "2");
         }
         else if (info.rank == 1)
         {
             // Don't forget it's transposed!
-            assert(matrixOfWhetherIndexIsMaximumA[1, 0] == TRUE);
-            assert(matrixOfWhetherIndexIsMaximumB[0, 2] == TRUE);
+            mh.abortIf(matrixOfWhetherIndexIsMaximumA[1, 0] != TRUE, "3");
+            mh.abortIf(matrixOfWhetherIndexIsMaximumB[0, 2] != TRUE, "4");
         }
     }
 
     // ================================================
     //     Step 3 & 4: Share values & Calculate Nash 
     // ================================================
-    size_t maxPossibleAllocatedAColumns = (info.size + DataHeight - 1) / DataHeight;
-    size_t maxPossibleAllocatedBRows = (info.size + DataWidth - 1) / DataWidth;
+    size_t maxPossibleAllocatedAColumns = (DataWidth + DataWidth - 1) / (info.size);
+    size_t maxPossibleAllocatedBRows = (DataHeight + DataHeight - 1) / (info.size);
     // We need to send a rectangular submatrix.
     BOOL[] sendBuffer = new BOOL[](numAllocatedRowsB * maxPossibleAllocatedAColumns);
     BOOL[] receiveBuffer = new BOOL[](maxPossibleAllocatedBRows * numAllocatedColumnsA);
@@ -126,9 +129,6 @@ int main()
 
     foreach (processIndex; 0..info.size)
     {
-        if (info.rank == processIndex)
-            continue;
-
         const partnerRowIndexStartB = offsetForProcess(processIndex, DataHeight);
         const partnerRowIndexEndB = offsetForProcess(processIndex + 1, DataHeight);
         const partnerNumAllocatedRowsB = cast(size_t) partnerRowIndexEndB - partnerRowIndexStartB;
@@ -146,7 +146,7 @@ int main()
         foreach (rowIndex; 0..numAllocatedRowsB)
         foreach (colIndex; 0..partnerNumAllocatedColumnsA)
         {
-            sendMatrix[rowIndex, colIndex] = matrixOfWhetherIndexIsMaximumB[rowIndex, colIndex];
+            sendMatrix[rowIndex, colIndex] = matrixOfWhetherIndexIsMaximumB[rowIndex, colIndex + partnerColumnIndexStartA];
         }
 
         auto receiveBufferSlice = receiveBuffer[0..(partnerNumAllocatedRowsB * numAllocatedColumnsA)];
@@ -160,7 +160,7 @@ int main()
             if (matrixOfWhetherIndexIsMaximumA[rowIndex + partnerRowIndexStartB, colIndex] 
                 && receiveMatrix[rowIndex, colIndex])
             {
-                results ~= Point(rowIndex, colIndex);
+                results ~= Point(rowIndex + partnerRowIndexStartB, colIndex + columnIndexStartA);
             }
         }
     }
@@ -174,7 +174,7 @@ int main()
         {
             foreach (result; results)
             {
-                writeln("Process ", processIndex, " found (", result.row, ", ", result.col, ")");
+                writeln("Process ", processIndex, " found (", result.row, ", ", result.column, ")");
             }
         }
         mh.barrier();
@@ -186,25 +186,24 @@ int main()
 else // version(!ArbitraryMatrix)
 int main()
 {
-    // Ensure matrices are square at compile time.
-    static assert(AData.length == DataWidth^^2);
-    static assert(BData.length == DataWidth^^2);
-
     import mpi;
     import mh = mpihelper;
     import std.stdio : writeln;
 
     auto info = mh.initialize();
     scope(exit) mh.finalize();
-    mh.abortIf(info.size != DataWidth, "Number of processes must be equal to the matrix dimension");
 
     const root = 0;
     bool isRoot() { return info.rank == root; }
-
-    auto reduceBufferA = new mh.IntInt[](DataWidth);
+    auto reduceBufferA = new mh.IntInt[](info.size);
 
     version(RootDistributesValues)
     {
+        // Ensure matrices are square at compile time.
+        static assert(AData.length == DataWidth^^2);
+        static assert(BData.length == DataWidth^^2);
+        mh.abortIf(info.size != DataWidth, "Number of processes must be equal to the matrix dimension");
+
         auto rootBufferStartIndex() { return root * DataWidth; }
 
         int[] A;
@@ -280,35 +279,38 @@ int main()
             }
         }
 
-        void integerInputHandlerFunction(string messageFormatString, alias buffer)(int processIndex)
+        auto integerInputHandlerFunction(string messageFormatString)(mh.IntInt[] buffer)
         {
-            foreach (i, ref pair; buffer)
+            return (int processIndex)
             {
-                if (processIndex == info.rank)
+                foreach (i, ref pair; buffer)
                 {
-                    mixin("writeln(" ~ messageString, ");");
-                    pair.rank = info.rank;
-                }
+                    if (processIndex == info.rank)
+                    {
+                        mixin("writeln(" ~ messageFormatString ~ ");");
+                        pair.rank = info.rank;
+                    }
 
-                const tag = 10;
-                if (processIndex == info.rank && info.rank == 0)
-                {
-                    pair.value = readInt();
+                    const tag = 10;
+                    if (processIndex == info.rank && info.rank == 0)
+                    {
+                        pair.value = readInt();
+                    }
+                    else if (processIndex == info.rank)
+                    {
+                        mh.recv(&pair.value, 0, tag);
+                    }
+                    else // if (info.rank == 0)
+                    {
+                        auto value = readInt();
+                        mh.send(&value, processIndex, tag);
+                    }
                 }
-                else if (processIndex == info.rank)
-                {
-                    mh.recv(&pair.value, 0, tag);
-                }
-                else // if (info.rank == 0)
-                {
-                    auto value = readInt();
-                    mh.send(&value, processIndex, tag);
-                }
-            }
+            };
         }
 
         inputForEveryProcess(
-            &integerInputHandlerFunction!(`"Enter A[", processIndex, ", ", i, "] = "`, reduceBufferA));
+            integerInputHandlerFunction!(`"Enter A[", processIndex, ", ", i, "] = "`)(reduceBufferA));
     }
     else
     {
@@ -340,7 +342,7 @@ int main()
         printReduceBuffer("A", reduceBufferA);
     }
 
-    auto reduceBufferB = new mh.IntInt[](DataWidth);
+    auto reduceBufferB = new mh.IntInt[](info.size);
 
     version(RootDistributesValues)
     {
@@ -358,7 +360,7 @@ int main()
     else version(KeyboardInput)
     {
         inputForEveryProcess(
-            &integerInputHandlerFunction!(`"Enter B[", i, ", ", processIndex, "] = "`, reduceBufferB));
+            integerInputHandlerFunction!(`"Enter B[", i, ", ", processIndex, "] = "`)(reduceBufferB));
     }
     else 
     {
@@ -373,14 +375,14 @@ int main()
 
     if (isRoot)
     {
-        printReduceBuffer("BTraspose", reduceBufferB);
+        printReduceBuffer("BTranspose", reduceBufferB);
     }
 
     if (isRoot)
     {
         int hitCount = 0;
-        foreach (colIndexA; 0..DataWidth)
-        foreach (rowIndexB; 0..DataWidth)
+        foreach (colIndexA; 0..info.size)
+        foreach (rowIndexB; 0..info.size)
         {
             auto colIndexB = reduceBufferB[rowIndexB].rank;
             auto rowIndexA = reduceBufferA[colIndexA].rank;
