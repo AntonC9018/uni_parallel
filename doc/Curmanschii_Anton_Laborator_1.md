@@ -1,7 +1,10 @@
 # Lucrarea de laborator nr.1 la Programarea Paralelă și Distribuită
 
 Tema: **Jocuri bimatriceale si situații Nash de echilibru.**
+
 A realizat: **Curmanschii Anton, IA1901**
+
+Vedeți [github-ul](https://github.com/AntonC9018/uni_parallel).
 
 - [Lucrarea de laborator nr.1 la Programarea Paralelă și Distribuită](#lucrarea-de-laborator-nr1-la-programarea-paralelă-și-distribuită)
   - [Sarcina](#sarcina)
@@ -1682,7 +1685,7 @@ Deci trebuie să schimbăm ciclul în așa mod ca procesul 0 să ia valorile de 
 Pentru aceasta vom executa funcția dacă este root:
 ```d
 if (processIndex == info.rank 
-    || isRoot)
+    || info.rank == 0)
 {
     loop(processIndex);
 }
@@ -1719,7 +1722,7 @@ inputForEveryProcess((int processIndex)
 });
 ```
 
-Logica a devenit prea complicată, iar diferă de fapt numai ce bufer umplăm și ce mesaj afișăm.
+Logica a devenit prea complicată, iar diferă de fapt numai ce bufer umplem și ce mesaj afișăm.
 Vom face o funcție-șablon care poate returnează funcția care poate fi utilizată în loc de aceasta.
 
 ```d
@@ -1774,7 +1777,7 @@ B = \begin{pmatrix}
    \underline{0}  &  0  \\\\
    0              &  \underline{1}
 \end{pmatrix},
-NE = \{ (0, 0), (1, 1) \}.
+NE = \\{ (0, 0), (1, 1) \\}.
 $$
 
 ```

@@ -271,7 +271,7 @@ int main()
         {
             foreach (processIndex; 0..info.size)
             {
-                if (processIndex == info.rank || isRoot)
+                if (processIndex == info.rank || info.rank == 0)
                 {
                     loop(processIndex);
                 }
