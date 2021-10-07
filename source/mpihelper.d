@@ -325,8 +325,9 @@ int allgatherAlloc(T, U)(const(T) sendBuffer, out U[] recvBuffer, int groupSize,
         sendBufferInfo.length, sendBufferInfo.datatype, comm);
 }
 
-template OperationInfo(alias operation)
+template OperationInfo(alias operation, bool _IsUserDefined = true)
 {
+    enum IsUserDefined = _IsUserDefined;
     static if (is(typeof(&operation) : void function(T*, T*, int*), T))
     {
         enum HasRequiredType = true;
@@ -371,10 +372,12 @@ struct Operation(alias operation)
         MPI_Op handle;
         mixin OperationInfo!operation;
     }
+    // TODO: add the ability to wrap these in with types.
     else
     {
         static MPI_Op handle() { return operation; }
         enum HasRequiredType = false;
+        enum IsUserDefined = false;
     }
 }
 
@@ -509,4 +512,138 @@ void customIntraReduce(T)(T[] values, in InitInfo info, void delegate(const(T)[]
 
         processesLeft = activeProcessesCount;
     }
+}
+
+private template UnrollMemoryAccess(alias buffer, alias startIndex, alias targetRank)
+{
+    alias bufferInfo = BufferInfo!buffer;
+    MPI_Aint offset() { return cast(MPI_Aint) (startIndex * bufferInfo.ElementType.sizeof); }
+    import std.meta : AliasSeq;
+    alias UnrollAccess = AliasSeq!(UnrollBuffer!buffer, targetRank, offset, bufferInfo.length, bufferInfo.datatype);
+}
+
+struct MemoryWindow(T)
+{
+    MPI_Win handle;
+
+    int get(Buffer)(Buffer buffer, size_t startIndex, int targetRank)
+    {
+        static assert(is(BufferInfo!buffer.ElementType == T)); 
+        return MPI_Get(UnrollMemoryAccess!(buffer, startIndex, targetRank), handle);
+    }
+
+    int put(Buffer)(Buffer buffer, size_t startIndex, int targetRank)
+    {
+        static assert(is(BufferInfo!buffer.ElementType == T)); 
+        return MPI_Put(UnrollMemoryAccess!(buffer, startIndex, targetRank), handle);
+    }
+
+    private MPI_Op getOpHandleWithChecks(Op)(Op op)
+    {
+        static if (Op == MPI_Op)
+        {
+            return op;
+        }
+        else
+        {
+            // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=618&zoom=180,19,455
+            static assert(!Op.IsUserDefined);
+
+            static assert(!Op.HasRequiredType || is(T == Op.RequiredType));
+            return op.handle;
+        }
+    }
+
+    /// Writes `buffer` to the target, applying `op` on the input and output vectors
+    /// before writing to the destination.
+    /// `op` must be one of the predefined operations or MPI_REPLACE.
+    int accumulate(Buffer, Op)(Buffer buffer, size_t startIndex, int targetRank, Op op)
+    {
+        static assert(is(BufferInfo!buffer.ElementType == T)); 
+        return MPI_Accumulate(
+            UnrollMemoryAccess!(buffer, startIndex, targetRank), 
+            getOpHandleWithChecks(op), handle); 
+    }
+
+    /// Returns the data in the destination buffer before applying the accumulation.
+    /// The same set of restrictions applies to this function as to `accumulate`.
+    /// MPI_NO_OP may be used as the values of `op`.
+    int getAccumulate(Buffer, Op)(Buffer buffer, size_t startIndex, int targetRank, Op op)
+    {
+        static assert(is(BufferInfo!buffer.ElementType == T)); 
+        return MPI_Get_accumulate(
+            UnrollMemoryAccess!(buffer, startIndex, targetRank), 
+            getOpHandleWithChecks(op), handle); 
+    }
+
+    int fetchAndOp(Op)(T* value, T* destinationBeforeOp, size_t startIndex, int targetRank, Op op)
+    {
+        return MPI_Fetch_and_op(
+            value, destinationBeforeOp, Datatype!T, 
+            targetRank, 
+            cast(MPI_Aint) (startIndex * T.sizeof), 
+            getOpHandleWithChecks(op), handle);
+    }
+
+    int compareAndSwap(
+        T* replacement, T* compareAgainst, T* destinationBeforeSwap, 
+        size_t startIndex, int targetRank)
+    {
+        static assert(!IsCustomDatatype!T);
+
+        return MPI_Compare_and_swap(
+            replacement, compareAgainst, destinationBeforeSwap, 
+            Datatype!T, targetRank, cast(MPI_Aint) (startIndex * T.sizeof), 
+            handle);
+    }
+
+    T getSync(size_t index = 0)
+    {
+        T result;
+    }
+
+    void free()
+    {
+        MPI_Win_free(&handle);
+    }
+
+    void fence()
+    {
+        MPI_Win_fence(0, handle);
+    }
+}
+
+auto createMemoryWindow(T)(T value, MPI_Info info = MPI_INFO_NULL, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    alias bufferInfo = BufferInfo!value;
+    MemoryWindow!(bufferInfo.ElementType) window = void;
+    window.length = bufferInfo.length;
+    MPI_Win_create(
+        bufferInfo.ptr, bufferInfo.ElementType.sizeof * bufferInfo.length, 1, 
+        info, comm, &(window.handle));
+    return window;
+}
+
+auto acquireMemoryWindow(ElementType)(MPI_Aint length, MPI_Info info = MPI_INFO_NULL, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    MemoryWindow!ElementType result = void;
+    result.length = cast(size_t) length;
+    MPI_Win_create(MPI_BOTTOM, 0, 1, info, comm, &(result.handle));
+    return result;
+}
+
+auto allocalteMemoryWindow(T)(MPI_Aint length, out T[] allocatedBuffer, 
+    MPI_Info info = MPI_INFO_NULL, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    MemoryWindow!ElementType window = void;
+    window.length = cast(size_t) length;
+    void* memory;
+    MPI_Win_allocate(length * T.sizeof, 1, info, comm, &memory, &(window.handle));
+    allocatedBuffer = (cast(T*) memory)[0..length];
+    return window;
+}
+
+void freeMemory(T)(T* memory)
+{
+    MPI_Free_mem(memory);
 }
