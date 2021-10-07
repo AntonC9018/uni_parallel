@@ -1602,7 +1602,7 @@ foreach (processIndex; 0..info.size)
 }
 ```
 
-Întregul cod vedeți [aici](https://github.com/AntonC9018/uni_parallel/blob/20104194081cf7406398f4d5ddbb534db6c85414/source/lab1.d):
+Întregul cod vedeți [aici](https://github.com/AntonC9018/uni_parallel/blob/7f39da6ba236b9ebc394b930e15f2e95260b85fa/source/lab1.d):
 
 ### Executarea (matricea arbitrară, toate punctele de echilibru)
 
