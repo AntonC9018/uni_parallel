@@ -1,19 +1,20 @@
- Lucrarea de laborator nr.1 la Programarea Paraelelă și Distribuită
+# Lucrarea de laborator nr.1 la Programarea Paralelă și Distribuită
 
-Tema: **Jocuri bimatriceale si situatii Nash de echilibru.**
+Tema: **Jocuri bimatriceale si situații Nash de echilibru.**
 A realizat: **Curmanschii Anton, IA1901**
 
-- [Sarcina](#sarcina)
-- [Realizarea](#realizarea)
-  - [Matrice](#matrice)
-  - [1.a) Procesul 0 inițializează și distribuie.](#1a-procesul-0-inițializează-și-distribuie)
-  - [1.b) Fiecare proces își inițializează linia din matrice.](#1b-fiecare-proces-își-inițializează-linia-din-matrice)
-  - [Fără MPI_Reduce](#fără-mpi_reduce)
-  - [Executarea](#executarea)
-  - [Matricea de orice dimensiune, toate maximuri](#matricea-de-orice-dimensiune-toate-maximuri)
-  - [Executarea (matricea arbitrară, toate punctele de echilibru)](#executarea-matricea-arbitrară-toate-punctele-de-echilibru)
-  - [Inputul în procesul 0, distribuirea valorilor la celelalte procese](#inputul-în-procesul-0-distribuirea-valorilor-la-celelalte-procese)
-  - [Executarea (tăstătură — reparat)](#executarea-tăstătură--reparat)
+- [Lucrarea de laborator nr.1 la Programarea Paralelă și Distribuită](#lucrarea-de-laborator-nr1-la-programarea-paralelă-și-distribuită)
+  - [Sarcina](#sarcina)
+  - [Realizarea](#realizarea)
+    - [Matrice](#matrice)
+    - [1.a) Procesul 0 inițializează și distribuie.](#1a-procesul-0-inițializează-și-distribuie)
+    - [1.b) Fiecare proces își inițializează linia din matrice.](#1b-fiecare-proces-își-inițializează-linia-din-matrice)
+    - [Fără MPI_Reduce](#fără-mpi_reduce)
+    - [Executarea](#executarea)
+    - [Matricea de orice dimensiune, toate maximuri](#matricea-de-orice-dimensiune-toate-maximuri)
+    - [Executarea (matricea arbitrară, toate punctele de echilibru)](#executarea-matricea-arbitrară-toate-punctele-de-echilibru)
+    - [Inputul în procesul 0, distribuirea valorilor la celelalte procese](#inputul-în-procesul-0-distribuirea-valorilor-la-celelalte-procese)
+    - [Executarea (tăstătură — reparat)](#executarea-tăstătură--reparat)
 
 ## Sarcina
 
