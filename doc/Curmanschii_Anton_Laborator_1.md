@@ -1376,7 +1376,7 @@ unittest
     foreach (int numRows; 1..100)
     foreach (int numProcesses; 1..100)
     {
-        int sum;
+        int sum = 0;
      	foreach (i; 0..numProcesses)
         {
             sum += numRows * (i + 1) / numProcesses - numRows * i / numProcesses;
