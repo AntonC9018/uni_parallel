@@ -10,6 +10,7 @@ A realizat: **Curmanschii Anton, IA1901**
   - [1.b) Fiecare proces își inițializează linia din matrice.](#1b-fiecare-proces-își-inițializează-linia-din-matrice)
   - [Fără MPI_Reduce](#fără-mpi_reduce)
   - [Executarea](#executarea)
+  - [Matricea de orice dimensiune, toate maximuri](#matricea-de-orice-dimensiune-toate-maximuri)
 
 ## Sarcina
 
@@ -193,18 +194,18 @@ $$
 
 Procesul cu **rancul 0** determină:
 
-$$ 
+$
   {gr} ^ 0 _ {i^\star} = \\{ (0, 0) \\}, \\\\
   {gr} ^ 1 _ {i^\star} = \\{ (1, 1) \\}, \\\\
   {LineGr} ^ 0 = \\{ (0, 0), (1, 1) \\}; \\\\
   {gr} ^ 0 _ {j^\star} = \\{ (0, 1) \\}, \\\\
   {gr} ^ 1 _ {j^\star} = \\{ (1, 2) \\}, \\\\
   {ColGr} ^ 0 = \\{ (0, 1), (1, 2) \\}.
-$$
+$
 
 Procesul cu **rancul 1** determină:
 
-$$ 
+$ 
   {gr} ^ 0 _ {i^\star} = \\{ (2, 0) \\}, \\\\
   {gr} ^ 1 _ {i^\star} = \\{ (3, 1) \\}, \\\\
   {LineGr} ^ 1 = \\{ (2, 0), (3, 1) \\}; \\\\
@@ -212,34 +213,36 @@ $$
   {gr} ^ 0 _ {j^\star} = \\{ (0, 0), (0, 1), (0, 2), (0, 3) \\}, \\\\
   {gr} ^ 1 _ {j^\star} = \\{ (1, 0), (1, 1), (1, 2), (1, 3) \\}, \\\\
   {ColGr} ^ 1 = \\{ (0, 0), (0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (1, 3) \\}.
-$$
+$
 
 **În indici "globali":**
-$$
+
+$
   {LineGr} ^ 1 = \\{ (2, 2), (3, 3) \\}, \\\\
   {ColGr} ^ 1  = \\{ (2, 0), (2, 1), (2, 2), (2, 3), (3, 0), (3, 1), (3, 2), (3, 3) \\},
-$$
+$
 
 Procesul cu **rancul 2** determină:
 
-$$
+$
   {gr} ^ 0 _ {i^\star} = \\{ (0, 0), (1, 0), (2, 0), (3, 0), (4, 0) \\}, \\\\
   {gr} ^ 1 _ {i^\star} = \\{ (0, 1), (1, 1), (2, 1), (3, 1) \\}, \\\\
   {LineGr} ^ 2 = \\{ (0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (0, 1), (1, 1), (2, 1), (3, 1) \\}; \\\\
   {gr} ^ 0 _ {j^\star} = \\{ (0, 0), (0, 1), (0, 2), (0, 3), (0, 4) \\}, \\\\
   {gr} ^ 1 _ {j^\star} = \\{ (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5) \\}, \\\\
   {ColGr} ^ 2 = \\{ (0, 0), (0, 1), (0, 2), (0, 3), (0, 4), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5) \\}.
-$$
+$
 
 **În indici "globali":**
-$$
+
+$
   {LineGr} ^ 2 = \\{ (0, 4), (1, 4), (2, 4), (3, 4), (4, 4), (0, 5), (1, 5), (2, 5), (3, 5) \\}, \\\\
   {ColGr} ^ 2  = \\{ (4, 0), (4, 1), (4, 2), (4, 3), (4, 4), (5, 0), (5, 1), (5, 2), (5, 3), (5, 4), (5, 5) \\},
-$$
+$
 
 Procesul cu rancul 0 va determina $ LineGr $ și $ ColGr $ pentru indici globali:
 
-$$ 
+$ 
   {LineGr} = {LineGr} ^ 0 \cup {LineGr} ^ 1 \cup {LineGr} ^ 2 = 
   \left. 
     \begin{cases} 
@@ -248,11 +251,11 @@ $$
       (1, 5), (2, 5), (3, 5), (4, 5) 
     \end{cases}
   \right \\}
-$$
+$
 
 și 
 
-$$ 
+$ 
   {ColGr} = {ColGr} ^ 0 \cup {ColGr} ^ 1 \cup {ColGr} ^ 2 = 
   \left. 
     \begin{cases} 
@@ -263,7 +266,7 @@ $$
       (5, 5) 
     \end{cases} 
   \right \\}
-$$
+$
 
 Atunci $ NE = LineGr \cap ColGr = \\{ (2, 2), (3, 3), (4, 4) \\} $.
 
@@ -1351,3 +1354,56 @@ Enter A[1, 0] =
 ```
  
 Nu lucrează. Clar că aceasta este deoarece input-ul merge la primul proces. Asta am anticipat.
+
+
+### Matricea de orice dimensiune, toate maximuri
+
+Fie matricea $ A $ de dimensiunea $ NumRows x NumCols $. 
+
+Pentru a distribui liniile (coloanele) acestei matrici egal (cât mai egal) între procese, procesul cu rancul $ i $ va primi $ \left \lfloor{P * (i + 1) - P * i}\right \rceil  $ linii, unde $ P = NumRows / Size $ (sau $ NumCols / Size $), $ Size $ — numărul de procese în grup.
+
+Am realizat un test care asigură că formula este corectă:
+```d
+unittest
+{
+    foreach (int numRows; 1..100)
+    foreach (int numProcesses; 1..100)
+    {
+        int sum;
+     	foreach (i; 0..numProcesses)
+        {
+            sum += numRows * (i + 1) / numProcesses - numRows * i / numProcesses;
+        }
+        assert(sum == numRows);
+    }
+}
+```
+
+Acum întrebarea este cum să facem astfel încât fiecare proces să aibă N număr de linii?
+Adică cum să realizăm aceasta în cod? 
+Voi utiliza codul meu pentru matrice. 
+L-am modificat să nu aibă deplasare la linii și coloane dacă nu este o submatrice.
+
+Deci ne întoarcem la algoritmul meu. 
+
+1. Distribuim fiecărui proces porțiunea lui de linii sau coloane;
+2. Calculăm maximuri după aceste linii sau coloane;
+3. Împărțim (point-to-point) informația necesară altor procese, primim informația de la alte procese;
+4. Calculăm având informația primită punctele Nash de echilibru.
+
+Detalii:
+
+La primul punct, distribuim proceselor (sau inițializăm procele cu) *coloanele* din matricea $ A $ și *rândurile* din matricea $ B $.
+
+La al doilea punct, procesele perform operația de reducere iterând pe vectori săi.
+
+Mai departe, fiecare proces va necesita informația de la fiecare alt proces.
+Aici trebuie să utilizăm ori funcțiile de comunicare point-to-point buferizate, ori funcția `sendrecv`, ca să nu ne nimerim într-un deadloc unde fiecare proces încearcă să trasmită sincron simultan.
+
+> O altă idee este de colectat informații de la toate procesele în memoria tuturor proceselor, sau și mai bine, să utilizăm memoria partajată pentru rezultatele.
+> Încă o idee este să folosim scatter la fiecare proces.
+> Încă o idee este să stocăm rezultatele într-un bitmap pentru a minimiza memoria necesară (indicii biților să indice dacă elementul din matrice pe acel indice este maxim).
+
+Acum fiecare proces verifică datele primite și determină punctele de echilibru.
+
+Pasul 1:

@@ -1,4 +1,4 @@
-module things;
+module matrix;
 
 void printMatrix(M)(const(M) matrix) 
 {
@@ -94,12 +94,12 @@ struct IndexPair
     size_t col;
 }
 
-IndexPair[] getGlobalIndices(M : Matrix!(T, Transposed), T, bool Transposed)(size_t[] indices, ref const(M) matrix)
+IndexPair[] getGlobalIndices(M : Matrix!(T, flags), T, MatrixFlags flags)(size_t[] indices, ref const(M) matrix)
 {
     auto result = new IndexPair[](indices.length);
     foreach (colIndex, rowIndex; indices)
     {
-        if (Transposed)
+        if (flags & MatrixFlags.Transposed)
             swap(colIndex, rowIndex);
         result[colIndex].row = matrix._rowRange[0] + rowIndex;
         result[colIndex].col = matrix._colRange[0] + colIndex;
@@ -114,7 +114,7 @@ unittest
                                      1, 2, 3, ], 3);
     // [  5, 6,
     //    2, 3,  ]
-    Matrix!int shifted = m[1..$, 1..$];
+    auto shifted = m[1..$, 1..$];
 
     auto indices = getIndexOfFirstMinInColumns(shifted);
 
@@ -147,8 +147,18 @@ struct Range
 
 import std.algorithm.mutation : swap;
 
-struct Matrix(T, bool Transposed = false, bool IsSubmatrix = false)
+enum MatrixFlags
 {
+    None = 0,
+    Transposed = 1,
+    Submatrix = 2
+}
+
+struct Matrix(T, MatrixFlags flags = MatrixFlags.None)
+{
+    static bool Transposed() { return cast(bool)(MatrixFlags.Transposed & flags); }
+    static bool IsSubmatrix() { return cast(bool)(MatrixFlags.Submatrix & flags); }
+
     T* array;
 
     /// The actual width of the underlying matrix.
@@ -178,7 +188,7 @@ struct Matrix(T, bool Transposed = false, bool IsSubmatrix = false)
         size_t height() const { return allHeight(); }
     }
 
-    inout(Matrix!(T, !Transposed, IsSubmatrix)) transposed() inout
+    inout(Matrix!(T, flags ^ MatrixFlags.Transposed)) transposed() inout
     {
         static if (IsSubmatrix)
             return typeof(return)(array, _width, _height, _rowRange, _colRange);
@@ -218,7 +228,7 @@ struct Matrix(T, bool Transposed = false, bool IsSubmatrix = false)
     // m[a, b..c] = m[a .. a + 1, b..c]
     auto inout opIndex(size_t rowIndex, size_t[2] cols) { return opIndex([rowIndex, rowIndex + 1], cols); }
 
-    inout(Matrix!(T, Transposed, true)) opIndex(size_t[2] row, size_t[2] col) inout
+    inout(Matrix!(T, flags | MatrixFlags.Submatrix)) opIndex(size_t[2] row, size_t[2] col) inout
     {
         if (Transposed)
             swap(row, col);
@@ -318,10 +328,9 @@ unittest
     //     5, 8, 
     //     4, 7, ];
     import std.stdio;
-    writeln(matrixT[0, 0]);
-    assert(matrixT[0, 0] == 6);
-    assert(matrixT[1, 1] == 8);
-    assert(matrixT[2, 1] == 7);
+    assert(matrixSliceT[0, 0] == 6);
+    assert(matrixSliceT[1, 1] == 8);
+    assert(matrixSliceT[2, 1] == 7);
 
     // take first row, all columns
     auto firstRow = matrix[0, 0..$];
@@ -340,13 +349,13 @@ unittest
 }
 unittest
 {
-    const(Matrix!(int, false, true)) constMatrix;
-    static assert(is(typeof(constMatrix[0..1, 0..2]) == const(Matrix!(int, false, true))));
-    immutable(Matrix!(int, false, true)) immutableMatrix;
+    const(Matrix!(int, MatrixFlags.Submatrix)) constMatrix;
+    static assert(is(typeof(constMatrix[0..1, 0..2]) == const(Matrix!(int, MatrixFlags.Submatrix))));
+    immutable(Matrix!(int, MatrixFlags.Submatrix)) immutableMatrix;
     static assert(is(typeof(immutableMatrix[0..0, 0]) == typeof(immutableMatrix)));
     static assert(is(typeof(immutableMatrix.array) == immutable(int*)));
     static assert(is(typeof(immutableMatrix[0, 0]) == immutable(int)));
-    static assert(is(typeof(immutableMatrix.transposed()) == immutable(Matrix!(int, true, true))));
+    static assert(is(typeof(immutableMatrix.transposed()) == immutable(Matrix!(int, MatrixFlags.Submatrix | MatrixFlags.Transposed))));
     static assert(!__traits(compiles, constMatrix[0, 0] = 2));
     static assert(!__traits(compiles, immutableMatrix[0, 0] = 2));
 }
