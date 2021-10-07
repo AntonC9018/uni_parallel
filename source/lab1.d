@@ -76,6 +76,7 @@ int main()
     Matrix!BOOL getMaximums(M)(M matrix)
     {
         BOOL[] result = new BOOL[](matrix.width * matrix.height);
+        auto resultMatrix = matrixFromArray(result, matrix.width);
         foreach (rowIndex; 0..matrix.height)
         {
             // Find the max, then mark true all cells with that values
@@ -88,12 +89,12 @@ int main()
             foreach (colIndex; 0..matrix.width)
             {
                 if (matrix[rowIndex, colIndex] == maxValue)
-                    result[rowIndex * matrix.width + colIndex] = TRUE;
+                    resultMatrix[rowIndex, colIndex] = TRUE;
             }
         }
-        return matrixFromArray(result, matrix.width);
+        return resultMatrix;
     }
-    // We transpose a twice so in the end it's normal again
+    // We transpose A twice so in the end it's normal again
     auto matrixOfWhetherIndexIsMaximumA = getMaximums(AMatrix.transposed).transposed;
     auto matrixOfWhetherIndexIsMaximumB = getMaximums(BMatrix);
 
@@ -145,7 +146,7 @@ int main()
         foreach (rowIndex; 0..numAllocatedRowsB)
         foreach (colIndex; 0..partnerNumAllocatedColumnsA)
         {
-            sendMatrix[rowIndex, colIndex] = vectorOfWhetherIndexIsMaximumB[rowIndex, colIndex];
+            sendMatrix[rowIndex, colIndex] = matrixOfWhetherIndexIsMaximumB[rowIndex, colIndex];
         }
 
         auto receiveBufferSlice = receiveBuffer[0..(partnerNumAllocatedRowsB * numAllocatedColumnsA)];
@@ -267,27 +268,47 @@ int main()
             return 0;
         }
 
-        void inputForEveryProcess(scope void delegate() loop)
+        void inputForEveryProcess(scope void delegate(int processIndex) loop)
         {
             foreach (processIndex; 0..info.size)
             {
-                if (processIndex == info.rank)
+                if (processIndex == info.rank || isRoot)
                 {
-                    loop();
+                    loop(processIndex);
                 }
                 mh.barrier();
             }
         }
 
-        inputForEveryProcess(
+        void integerInputHandlerFunction(string messageFormatString, alias buffer)(int processIndex)
         {
-            foreach (colIndex, ref pair; reduceBufferA)
+            foreach (i, ref pair; buffer)
             {
-                writeln("Enter A[", info.rank, ", ", colIndex, "] = ");
-                pair.value = readInt();
-                pair.rank = info.rank;
+                if (processIndex == info.rank)
+                {
+                    mixin("writeln(" ~ messageString, ");");
+                    pair.rank = info.rank;
+                }
+
+                const tag = 10;
+                if (processIndex == info.rank && info.rank == 0)
+                {
+                    pair.value = readInt();
+                }
+                else if (processIndex == info.rank)
+                {
+                    mh.recv(&pair.value, 0, tag);
+                }
+                else // if (info.rank == 0)
+                {
+                    auto value = readInt();
+                    mh.send(&value, processIndex, tag);
+                }
             }
-        });
+        }
+
+        inputForEveryProcess(
+            &integerInputHandlerFunction!(`"Enter A[", processIndex, ", ", i, "] = "`, reduceBufferA));
     }
     else
     {
@@ -337,14 +358,7 @@ int main()
     else version(KeyboardInput)
     {
         inputForEveryProcess(
-        {
-            foreach (colIndex, ref pair; reduceBufferB)
-            {
-                writeln("Enter B[", colIndex, ", ", info.rank, "] = ");
-                pair.value = readInt();
-                pair.rank = info.rank;
-            }
-        });
+            &integerInputHandlerFunction!(`"Enter B[", i, ", ", processIndex, "] = "`, reduceBufferB));
     }
     else 
     {
