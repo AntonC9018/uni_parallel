@@ -155,9 +155,9 @@ int main()
         foreach (rowIndex; 0..partnerNumAllocatedRowsB)
         foreach (colIndex; 0..numAllocatedColumnsA)
         {
-            // Check if the maximum for A matches the maximum for B received from the other process
+            // Check if the cells in both A and B are max
             if (matrixOfWhetherIndexIsMaximumA[rowIndex + partnerRowIndexStartB, colIndex] 
-                == receiveMatrix[rowIndex, colIndex])
+                && receiveMatrix[rowIndex, colIndex])
             {
                 results ~= Point(rowIndex, colIndex);
             }
