@@ -1529,12 +1529,13 @@ Sper că descrierea problemei a fost clară.
 Deci, ideal, am dori să construim perechile unice de indici $ P_i $ pentru fiecare proces $ i $, unde $ P_i[j] = P_j[i] $ pentru fiecare proces.
 De fapt, este o problema cunoscută în matematică și îmi pare că nu există algoritmi eficiente de rezolvare a acestei probleme pentru un număr de procese arbitrar (nu țin minte denumirea problemei de aceea nu pot da link).
 
+```d
 // ================================================
 //     Step 3 & 4: Share values & Calculate Nash 
 // ================================================
 size_t maxPossibleAllocatedAColumns = (info.size + DataHeight - 1) / DataHeight;
 size_t maxPossibleAllocatedBRows = (info.size + DataWidth - 1) / DataWidth;
-// We need to send a square submatrix.
+// We need to send a rectangular submatrix.
 BOOL[] sendBuffer = new BOOL[](numAllocatedRowsB * maxPossibleAllocatedAColumns);
 BOOL[] receiveBuffer = new BOOL[](maxPossibleAllocatedBRows * numAllocatedColumnsA);
 struct Point { size_t row; size_t column; }
@@ -1580,6 +1581,7 @@ foreach (processIndex; 0..info.size)
         }
     }
 }
+```
 
 Și la **pasul 6** afișăm rezultatele:
 

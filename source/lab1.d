@@ -118,7 +118,7 @@ int main()
     // ================================================
     size_t maxPossibleAllocatedAColumns = (info.size + DataHeight - 1) / DataHeight;
     size_t maxPossibleAllocatedBRows = (info.size + DataWidth - 1) / DataWidth;
-    // We need to send a square submatrix.
+    // We need to send a rectangular submatrix.
     BOOL[] sendBuffer = new BOOL[](numAllocatedRowsB * maxPossibleAllocatedAColumns);
     BOOL[] receiveBuffer = new BOOL[](maxPossibleAllocatedBRows * numAllocatedColumnsA);
     struct Point { size_t row; size_t column; }
