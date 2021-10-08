@@ -12,9 +12,9 @@
 // în funcții aparte. Așa programe mici va fi dificil de profilat corect,
 // în special în întregime, de aceea cel puțin am făcut acest lucru.
 // 
-// Codul sursă care este profilat de către acest program găsiți aici:
-// `example_3_4_4.d`: 
-// `example_3_6_1.d`:
+// Codul sursă care este profilat de acest program găsiți aici:
+// `example_3_4_4.d`: https://github.com/AntonC9018/uni_parallel/blob/1042c266578005759d994240ecbe344ae16ef7a7/source/example_3_4_4.d#L66-L78
+// `example_3_6_1.d`: https://github.com/AntonC9018/uni_parallel/blob/1042c266578005759d994240ecbe344ae16ef7a7/source/example_3_6_1.d#L80-L127
 //
 // Codul trebuie compilat cam astfel (utilizând scriptul meu, fiind în mapa mea): 
 /*
@@ -42,7 +42,7 @@ int main()
     auto info = mh.initialize();
     scope(exit) mh.finalize();
 
-    // Am adăugat aceasta pentru a estima constul creării ferestrelor.
+    // Am adăugat aceasta pentru a estima costul creării ferestrelor.
     version(SingleWindow)
     {
         example_3_6_1.initializeWindow(info);
@@ -155,4 +155,9 @@ int main()
     One-directional communication took 0.567171 seconds per iteration
 */
 
-// Deci alocarea ferestrei era de fapt costisitoare, însă schimbul de date este oricum mai lent.
+// Deci alocarea ferestrei era de fapt costisitoare, însă schimbul de date este oricum mai lent,
+// comunicarea RMA fiind de 4 ori mai lentă.
+
+// Scopul utilizării RMA este ca procesele să aibă posibilitate să ia acele date care ele vor,
+// fără ca procesul ce deține datele să știe tot ce date să le trimită.
+// Procesul care posedă memoria care va fi accesată doar expune întregul bufer.
