@@ -3,7 +3,7 @@
 #include <math.h>
 double f(double a)
 {
-    return (4.0 / (1.0 + a*a));
+    return (4.0 / (1.0 + a * a));
 }
 int main(int argc, char *argv[])
 {
@@ -11,30 +11,32 @@ int main(int argc, char *argv[])
     double PI25DT = 3.141592653589793238462643;
     double mypi, pi, h, sum, x;
     double startwtime, endwtime;
-    int  namelen;
+    int namelen;
     char processor_name[MPI_MAX_PROCESSOR_NAME];
-    MPI_Init(&argc,&argv);
-    MPI_Comm_size(MPI_COMM_WORLD,&numprocs);
-    MPI_Comm_rank(MPI_COMM_WORLD,&myid);
-    MPI_Get_processor_name(processor_name,&namelen);
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+    MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+    MPI_Get_processor_name(processor_name, &namelen);
     n = 0;
     while (!done)
     {
         if (myid == 0)
         {
-	 printf("===== Rezultatele programului '%s' =====\n",argv[0]);  
-	 printf("Enter the number of intervals: (0 quits) ");fflush(stdout);
-	    scanf("%d",&n);
-	    MPI_Barrier(MPI_COMM_WORLD);
-	    startwtime = MPI_Wtime();
+            printf("===== Rezultatele programului '%s' =====\n", argv[0]);
+            printf("Enter the number of intervals: (0 quits) ");
+            fflush(stdout);
+            scanf("%d", &n);
+            MPI_Barrier(MPI_COMM_WORLD);
+            startwtime = MPI_Wtime();
         }
-        else MPI_Barrier(MPI_COMM_WORLD);
+        else
+            MPI_Barrier(MPI_COMM_WORLD);
         MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
         if (n == 0)
             done = 1;
         else
         {
-            h   = 1.0 / (double) n;
+            h = 1.0 / (double)n;
             sum = 0.0;
             for (i = myid + 1; i <= n; i += numprocs)
             {
@@ -42,16 +44,16 @@ int main(int argc, char *argv[])
                 sum += f(x);
             }
             mypi = h * sum;
-		fprintf(stderr,"Process %d on %s mypi= %.16f\n", myid, processor_name, mypi);
-		fflush(stderr);	
-	  MPI_Reduce(&mypi, &pi, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-	       if (myid == 0)
-	    	{
+            fprintf(stderr, "Process %d on %s mypi= %.16f\n", myid, processor_name, mypi);
+            fflush(stderr);
+            MPI_Reduce(&mypi, &pi, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+            if (myid == 0)
+            {
                 printf("Pi is approximately %.16f, Error is %.16f\n",
-		    pi, fabs(pi - PI25DT));
-		endwtime = MPI_Wtime();
-		printf("wall clock time = %f\n", endwtime-startwtime);	       
-	   		}
+                       pi, fabs(pi - PI25DT));
+                endwtime = MPI_Wtime();
+                printf("wall clock time = %f\n", endwtime - startwtime);
+            }
         }
     }
     MPI_Finalize();

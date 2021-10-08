@@ -314,13 +314,10 @@ int main()
     }
     else
     {
-        void initializeA()
+        foreach (colIndex, ref pair; reduceBufferA)
         {
-            foreach (colIndex, ref pair; reduceBufferA)
-            {
-                pair.value = AData[colIndex + rank * DataWidth];
-                pair.rank = rank;
-            }
+            pair.value = AData[colIndex + rank * DataWidth];
+            pair.rank = rank;
         }
     }
 

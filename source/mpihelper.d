@@ -50,13 +50,16 @@ void barrier(MPI_Comm comm = MPI_COMM_WORLD) { MPI_Barrier(comm); }
 enum MPI_Datatype INVALID_DATATYPE = null;
 
 // TODO: a more complete list of these
-struct IntInt
+
+enum Pair;
+
+@Pair struct IntInt
 {
     int value;
     int rank;
 }
 
-struct DoubleInt
+@Pair struct DoubleInt
 {
     double value;
     int rank;
@@ -190,7 +193,7 @@ int bcast(T)(T buffer, int root, MPI_Comm comm = MPI_COMM_WORLD)
     return MPI_Bcast(UnrollBuffer!buffer, root, comm);
 }
 
-enum gatherTag = 717;
+private enum gatherTag = 717;
 
 /// https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=237&zoom=180,55,524
 int intraGatherSend(T)(T buffer, int root, MPI_Comm comm = MPI_COMM_WORLD)
@@ -440,11 +443,21 @@ int freeOp(Op)(Op op)
 
 /// Op must be duck-compatible with Operation!func.
 int intraReduce(T, Op)(T buffer, Op op, int rank, int root, MPI_Comm comm = MPI_COMM_WORLD)
-    if (__traits(hasMember, op, "handle"))
 {
     alias bufferInfo = BufferInfo!buffer;
-    static assert(!Op.HasRequiredType || is(bufferInfo.ElementType == Op.RequiredType));
-    return MPI_Reduce(rank == root ? MPI_IN_PLACE : bufferInfo.ptr, UnrollBuffer!buffer, op.handle, root, comm);
+    
+    MPI_Op opHandle;
+    static if (__traits(hasMember, op, "handle"))
+    {
+        static assert(!Op.HasRequiredType || is(bufferInfo.ElementType == Op.RequiredType));
+        opHandle = op.handle;
+    }
+    else
+    {
+        opHandle = op;
+    }
+    
+    return MPI_Reduce(rank == root ? MPI_IN_PLACE : bufferInfo.ptr, UnrollBuffer!buffer, opHandle, root, comm);
 }
 
 int intraReduce(T)(T buffer, MPI_Op opHandle, int rank, int root, MPI_Comm comm = MPI_COMM_WORLD)
@@ -519,28 +532,28 @@ private template UnrollMemoryAccess(alias buffer, alias startIndex, alias target
     alias bufferInfo = BufferInfo!buffer;
     MPI_Aint offset() { return cast(MPI_Aint) (startIndex * bufferInfo.ElementType.sizeof); }
     import std.meta : AliasSeq;
-    alias UnrollAccess = AliasSeq!(UnrollBuffer!buffer, targetRank, offset, bufferInfo.length, bufferInfo.datatype);
+    alias UnrollMemoryAccess = AliasSeq!(UnrollBuffer!buffer, targetRank, offset, bufferInfo.length, bufferInfo.datatype);
 }
 
 struct MemoryWindow(T)
 {
     MPI_Win handle;
 
-    int get(Buffer)(Buffer buffer, size_t startIndex, int targetRank)
+    int get(Buffer)(Buffer recvBuffer, size_t startIndex, int targetRank)
     {
-        static assert(is(BufferInfo!buffer.ElementType == T)); 
-        return MPI_Get(UnrollMemoryAccess!(buffer, startIndex, targetRank), handle);
+        static assert(is(BufferInfo!recvBuffer.ElementType == T)); 
+        return MPI_Get(UnrollMemoryAccess!(recvBuffer, startIndex, targetRank), handle);
     }
 
-    int put(Buffer)(Buffer buffer, size_t startIndex, int targetRank)
+    int put(Buffer)(Buffer sendBuffer, size_t startIndex, int targetRank)
     {
-        static assert(is(BufferInfo!buffer.ElementType == T)); 
-        return MPI_Put(UnrollMemoryAccess!(buffer, startIndex, targetRank), handle);
+        static assert(is(BufferInfo!sendBuffer.ElementType == T)); 
+        return MPI_Put(UnrollMemoryAccess!(sendBuffer, startIndex, targetRank), handle);
     }
 
     private MPI_Op getOpHandleWithChecks(Op)(Op op)
     {
-        static if (Op == MPI_Op)
+        static if (is(Op == MPI_Op))
         {
             return op;
         }
@@ -585,31 +598,32 @@ struct MemoryWindow(T)
             getOpHandleWithChecks(op), handle);
     }
 
-    int compareAndSwap(
-        T* replacement, T* compareAgainst, T* destinationBeforeSwap, 
-        size_t startIndex, int targetRank)
-    {
-        static assert(!IsCustomDatatype!T);
+    // Not available in this MPI version apparently
+    // int compareAndSwap(
+    //     T* replacement, T* compareAgainst, T* destinationBeforeSwap, 
+    //     size_t startIndex, int targetRank)
+    // {
+    //     static assert(!IsCustomDatatype!T);
 
-        return MPI_Compare_and_swap(
-            replacement, compareAgainst, destinationBeforeSwap, 
-            Datatype!T, targetRank, cast(MPI_Aint) (startIndex * T.sizeof), 
-            handle);
-    }
+    //     return MPI_Compare_and_swap(
+    //         replacement, compareAgainst, destinationBeforeSwap, 
+    //         Datatype!T, targetRank, cast(MPI_Aint) (startIndex * T.sizeof), 
+    //         handle);
+    // }
 
-    T getSync(size_t index = 0)
-    {
-        T result;
-    }
+    // T getSync(size_t index = 0)
+    // {
+    //     T result;
+    // }
 
     void free()
     {
         MPI_Win_free(&handle);
     }
 
-    void fence()
+    void fence(int modeFlags = 0)
     {
-        MPI_Win_fence(0, handle);
+        MPI_Win_fence(modeFlags, handle);
     }
 }
 
@@ -617,7 +631,6 @@ auto createMemoryWindow(T)(T value, MPI_Info info = MPI_INFO_NULL, MPI_Comm comm
 {
     alias bufferInfo = BufferInfo!value;
     MemoryWindow!(bufferInfo.ElementType) window = void;
-    window.length = bufferInfo.length;
     MPI_Win_create(
         bufferInfo.ptr, bufferInfo.ElementType.sizeof * bufferInfo.length, 1, 
         info, comm, &(window.handle));
@@ -627,23 +640,51 @@ auto createMemoryWindow(T)(T value, MPI_Info info = MPI_INFO_NULL, MPI_Comm comm
 auto acquireMemoryWindow(ElementType)(MPI_Aint length, MPI_Info info = MPI_INFO_NULL, MPI_Comm comm = MPI_COMM_WORLD)
 {
     MemoryWindow!ElementType result = void;
-    result.length = cast(size_t) length;
     MPI_Win_create(MPI_BOTTOM, 0, 1, info, comm, &(result.handle));
     return result;
 }
 
-auto allocalteMemoryWindow(T)(MPI_Aint length, out T[] allocatedBuffer, 
+auto allocateMemoryWindow(T)(MPI_Aint length, out T[] allocatedBuffer, 
     MPI_Info info = MPI_INFO_NULL, MPI_Comm comm = MPI_COMM_WORLD)
 {
-    MemoryWindow!ElementType window = void;
-    window.length = cast(size_t) length;
+    MemoryWindow!T window = void;
     void* memory;
     MPI_Win_allocate(length * T.sizeof, 1, info, comm, &memory, &(window.handle));
     allocatedBuffer = (cast(T*) memory)[0..length];
     return window;
 }
 
+// auto createGroup(MPI_Comm comm = MPI_COMM_WORLD)
+// {
+//     MPI_Group allGroup;
+//     MPI_Comm_group(comm, &allGroup);
+//     createGroup(
+// }
+
+// auto createGroup(MPI_Gtoup souceGroup, )
+// {
+//     MPI_Group_incl();
+// }
+
 void freeMemory(T)(T* memory)
 {
     MPI_Free_mem(memory);
+}
+
+int readInt()
+{
+    import std.stdio : readln, stdin;
+    import std.conv : to;
+    import std.string : strip;
+    while (true)
+    {
+        try
+        {
+            return readln().strip.to!int;
+        }
+        catch (Exception err)
+        {
+        }
+    }
+    return 0;
 }
