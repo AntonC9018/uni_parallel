@@ -76,31 +76,53 @@ int main()
 }
 
 else
-double calculatePi(in InitInfo info, int numberOfIterations)
 {
-    double calculatedPi;
-    mh.MemoryWindow!double calculatedPiWindow;
-    scope(exit) calculatedPiWindow.free();
-    
-    bool isRoot() { return info.rank == root; }
-    if (isRoot)
-        calculatedPiWindow = mh.createMemoryWindow(&calculatedPi);
-    else
-        calculatedPiWindow = mh.acquireMemoryWindow!double(1);
-
-    double h = 1.0 / cast(double) numberOfIterations;
-    double sum = 0;
-    for (int i = info.rank + 1; i <= numberOfIterations; i += info.size)
+    version(SingleWindow)
     {
-        double x = h * (cast(double) i - 0.5);
-        sum += piApproximationDerivative(x);
+        private double calculatedPi;
+        private mh.MemoryWindow!double calculatedPiWindow;
+        void initializeWindow(in mh.InitInfo info)
+        {
+            if (info.rank == root)
+                calculatedPiWindow = mh.createMemoryWindow(&calculatedPi);
+            else
+                calculatedPiWindow = mh.acquireMemoryWindow!double(1);
+        }
+        void freeWindow()
+        {
+            calculatedPiWindow.free();
+        }
     }
 
-    calculatedPi = h * sum;
-    calculatedPiWindow.fence();
-    if (!isRoot)
-        calculatedPiWindow.accumulate(&calculatedPi, 0, root, MPI_SUM);
-    calculatedPiWindow.fence();
+    double calculatePi(in mh.InitInfo info, int numberOfIterations)
+    {
+        bool isRoot() { return info.rank == root; }
+        version(SingleWindow){} else
+        {
+            double calculatedPi;
+            mh.MemoryWindow!double calculatedPiWindow;
+            scope(exit) calculatedPiWindow.free();
+            
+            if (isRoot)
+                calculatedPiWindow = mh.createMemoryWindow(&calculatedPi);
+            else
+                calculatedPiWindow = mh.acquireMemoryWindow!double(1);
+        }
 
-    return calculatedPi;
+        double h = 1.0 / cast(double) numberOfIterations;
+        double sum = 0;
+        for (int i = info.rank + 1; i <= numberOfIterations; i += info.size)
+        {
+            double x = h * (cast(double) i - 0.5);
+            sum += piApproximationDerivative(x);
+        }
+
+        calculatedPi = h * sum;
+        calculatedPiWindow.fence();
+        if (!isRoot)
+            calculatedPiWindow.accumulate(&calculatedPi, 0, root, MPI_SUM);
+        calculatedPiWindow.fence();
+
+        return calculatedPi;
+    }
 }

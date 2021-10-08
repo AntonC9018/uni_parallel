@@ -441,7 +441,6 @@ int freeOp(Op)(Op op)
 //     return MPI_Reduce(bufferInfo.ptr, MPI_IN_PLACE, bufferInfo.length, bufferInfo.datatype, op.handle, root, comm);
 // }
 
-/// Op must be duck-compatible with Operation!func.
 int intraReduce(T, Op)(T buffer, Op op, int rank, int root, MPI_Comm comm = MPI_COMM_WORLD)
 {
     alias bufferInfo = BufferInfo!buffer;
@@ -457,12 +456,6 @@ int intraReduce(T, Op)(T buffer, Op op, int rank, int root, MPI_Comm comm = MPI_
         opHandle = op;
     }
     
-    return MPI_Reduce(rank == root ? MPI_IN_PLACE : bufferInfo.ptr, UnrollBuffer!buffer, opHandle, root, comm);
-}
-
-int intraReduce(T)(T buffer, MPI_Op opHandle, int rank, int root, MPI_Comm comm = MPI_COMM_WORLD)
-{
-    alias bufferInfo = BufferInfo!buffer;
     return MPI_Reduce(rank == root ? MPI_IN_PLACE : bufferInfo.ptr, UnrollBuffer!buffer, opHandle, root, comm);
 }
 

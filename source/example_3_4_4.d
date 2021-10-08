@@ -65,8 +65,6 @@ int main()
 else
 void calculatePi(in mh.InitInfo info, int numberOfIterations)
 {
-    mh.bcast(&numberOfIterations, root);
-    
     double h = 1.0 / cast(double) numberOfIterations;
     double sum = 0;
     for (int i = info.rank + 1; i <= numberOfIterations; i += info.size)
