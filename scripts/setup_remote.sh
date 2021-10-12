@@ -58,6 +58,6 @@ then
 fi
 
 echo set -e > compile.sh
-echo $DMDBIN/dmd -c -m64 \$1.d mpihelper.d $HOME/OpenMPI-master/source/mpi/package.d -of=\$1.o "\$@" >> compile.sh
+echo $DMDBIN/dmd -c -m64 \$1.d mpihelper.d $HOME/OpenMPI-master/source/mpi/package.d -of=\$1.o "\${@:1}" >> compile.sh
 echo gcc \$1.o -o \$1.out -l:$HOME/dmd/usr/lib64/libphobos2.a $(mpiCC --showme:link) >> compile.sh
 chmod +x compile.sh 
