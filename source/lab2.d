@@ -35,7 +35,7 @@ int main()
         if (info.rank == 0)
         {
             import std.random : uniform;
-            sideIndex = uniform!size_t % 6;
+            sideIndex = uniform!uint % 6;
         }
         mh.bcast(&sideIndex, 0);
         
@@ -53,7 +53,7 @@ int main()
     if (info.rank == 0)
         writeln("Selected fixed axis index is ", fixedAxisIndex, " with coordinate ", fixedCoordinate);
 
-    // These two will change
+    // These two will change as we walk across the edge
     int[2] otherAxes = [(fixedAxisIndex + 1) % 3, (fixedAxisIndex + 2) % 3];
 
     // Get my own coords
@@ -65,7 +65,7 @@ int main()
         return 0;
 
     // And we must not be in the center of that side.
-    // We quit if none of the coords are at the side.
+    // We quit if none of the coords are at the edges.
     if (!otherAxes[].any!(axisIndex => 
         mycoords[axisIndex] == 0 || mycoords[axisIndex] == dimensions[axisIndex] - 1))
     {
