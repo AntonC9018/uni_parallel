@@ -283,4 +283,4 @@ The process has been aborted: At least two of the dimensions were 1. Please sele
 
 ## Întregul cod
 
-Vedeți github
+Vedeți [github](https://github.com/AntonC9018/uni_parallel/blob/95f998152788396c5360766d54466966bef77837/source/lab2.d).
