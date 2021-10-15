@@ -3,10 +3,16 @@ module mpihelper;
 import mpi;
 import core.runtime : Runtime, CArgs;
 
-struct InitInfo
+struct GroupInfo
 {
     int size;
     int rank;
+}
+
+struct InitInfo
+{
+    GroupInfo groupInfo;
+    alias groupInfo this;
     CArgs args;
 }
 
@@ -647,18 +653,6 @@ auto allocateMemoryWindow(T)(MPI_Aint length, out T[] allocatedBuffer,
     return window;
 }
 
-// auto createGroup(MPI_Comm comm = MPI_COMM_WORLD)
-// {
-//     MPI_Group allGroup;
-//     MPI_Comm_group(comm, &allGroup);
-//     createGroup(
-// }
-
-// auto createGroup(MPI_Gtoup souceGroup, )
-// {
-//     MPI_Group_incl();
-// }
-
 void freeMemory(T)(T* memory)
 {
     MPI_Free_mem(memory);
@@ -681,3 +675,157 @@ int readInt()
     }
     return 0;
 }
+
+MPI_Group getGroup(MPI_Comm comm = MPI_COMM_WORLD)
+{
+    MPI_Group group;
+    MPI_Comm_group(comm, &group);
+    return group;
+}
+
+GroupInfo getGroupInfo(MPI_Group group)
+{
+    GroupInfo result;
+    MPI_Group_size(group, &result.size);
+    MPI_Group_rank(group, &result.rank);
+    return result;
+}
+
+MPI_Group createGroupInclude(MPI_Group baseGroup, int[] includedRanks)
+{
+    MPI_Group result;
+    MPI_Group_incl(baseGroup, includedRanks.length, includedRanks.ptr, result);
+    return result;
+}
+
+MPI_Group createGroupExclude(MPI_Group baseGroup, int[] excludedRanks)
+{
+    MPI_Group result;
+    MPI_Group_excl(baseGroup, excludedRanks.length, excludedRanks.ptr, result);
+    return result;
+}
+
+void freeGroup(MPI_Group group)
+{
+    MPI_Group_free(group);
+}
+
+MPI_Comm createComm(MPI_Comm baseComm, MPI_Group baseGroup)
+{
+    MPI_Comm result;
+    MPI_Comm_create(baseComm, baseGroup, &result);
+    return result;
+}
+
+/// `dimensionLengths` — number of processes for each dimension.
+MPI_Comm createCartesianTopology(
+    int[] dimensionLengths, int[] dimensionLoopsAround, MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false)
+{
+    assert(dimensionLengths.length == dimensionLoopsAround.length);
+    MPI_Comm result;
+    int reorderInt = cast(int) reorder;
+    MPI_Cart_create(baseComm, dimensionLengths.length, dimensionLengths.ptr, dimensionLoopsAround.ptr, reorderInt, &result);
+    return result;
+}
+
+int distributeNumNodesOverDimensions(int numNodes, int[] result)
+{
+    return MPI_Dims_create(numNodes, result.length, result.ptr);
+}
+
+/// `indices` contain the ending index one past the end of the last edge index for the given node.
+/// `edges` is a flat arry of neighbors for nodes.
+/// For example, a call like `createGraph([2, 3, 4], [1, 2, 0, 0])` creates the graph
+///      ( 1 ) <—> ( 0 ) <—> ( 2 )
+/// The parameters are assumed to have valid values, 
+/// since the return code of the underlying function is ignored.
+MPI_Comm createGraph(const(int)[] indices, const(int)[] edges, MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false)
+{
+    assert(indices[$ - 1] == edges.length);
+    MPI_Comm result;
+    int reorderInt = cast(int) reorder;
+    // They are const in the spec, but not const in the bindings for some reason?
+    MPI_Graph_create(baseComm, indices.length, cast() indices.ptr, cast() edges.ptr, reorderInt, &result);
+    return result;
+}
+
+private int* getWeightsPointer(const(int)[] weights)
+{
+    return weights.length == 0 ? cast(int*) MPI_WEIGHTS_EMPTY : cast() weights.ptr;
+}
+
+MPI_Comm createDistributedGraphFromAdjacencies(
+    const(int)[] incomingEdges, const(int)[] incomingEdgeWeights,
+    const(int)[] outgoingEdges, const(int)[] outgoingEdgeWeights,
+    MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
+{
+    assert(incomingEdges.length == incomingEdgeWeights.length);
+    assert(outgoingEdges.length == outgoingEdgeWeights.length);
+    // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=438&zoom=180,65,231
+    MPI_Comm result;
+    int reorderInt = cast(int) reorder;
+    MPI_Dist_graph_create_adjacent(
+        baseComm, 
+        cast() incomingEdges.length, cast() incomingEdges.ptr, getWeightsPointer(incomingEdgeWeights),
+        cast() outgoingEdges.length, cast() outgoingEdges.ptr, getWeightsPointer(outgoingEdgeWeights),
+        info, reorderInt, &result);
+    return result;
+}
+
+MPI_Comm createDistributedGraphFromAdjacenciesUnweighted(
+    const(int)[] incomingEdges, const(int)[] outgoingEdges,
+    MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
+{
+    MPI_Comm result;
+    int reorderInt = cast(int) reorder;
+    MPI_Dist_graph_create_adjacent(
+        baseComm, 
+        cast() incomingEdges.length, cast() incomingEdges.ptr, cast(int*) MPI_UNWEIGHTED,
+        cast() outgoingEdges.length, cast() outgoingEdges.ptr, cast(int*) MPI_UNWEIGHTED,
+        info, reorderInt, &result);
+    return result;
+}
+
+MPI_Comm createDistributedGraphFromNeighborsUnweighted(
+    const(int)[] outgoingEdges, int rank, MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
+{
+    MPI_Comm result;
+    int reorderInt = cast(int) reorder;
+    int degree = outgoingEdges.length;
+    MPI_Dist_graph_create(baseComm, 1, &rank, 
+        &degree, cast() outgoingEdges.ptr, 
+        MPI_UNWEIGHTED, info, reorderInt, &result); 
+    return result;
+}
+
+MPI_Comm createDistributedGraphFromNeighbors(
+    const(int)[] outgoingEdges, const(int)[] outgoingWeights, int rank, MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
+{
+    MPI_Comm result;
+    int reorderInt = cast(int) reorder;
+    int degree = outgoingEdges.length;
+    MPI_Dist_graph_create(baseComm, 1, &rank, 
+        &degree, cast() outgoingEdges.ptr, 
+        getWeightsPointer(outgoingWeights), info, reorderInt, &result); 
+    return result;
+}
+
+int getCartesianRank(MPI_Comm comm, const(int)[] coordinates)
+{
+    int result;
+    MPI_Cart_rank(comm, &result, cast() coordinates.ptr);
+    return result;
+}
+
+int getCartesianCoordinates(MPI_Comm comm, int rank, int[] coordinates)
+{
+    return MPI_Cart_coords(comm, rank, coordinates.length, coordinates.ptr);
+}
+
+// MPI_Comm createGraph(const(int)[][] edges, bool reorder = false, MPI_Comm baseComm = MPI_COMM_WORLD)
+// {
+//     int[] indices = new int[](edges.length);
+//     indices[0] = edges[0].length;
+//     foreach (i; 1..indices.length)
+//         indices[i] = indices[i - 1] + edges[i].length;
+// }

@@ -1,3 +1,13 @@
 {
-    "filename": "things"
+    "filename": "things",
+    "files.associations": {
+        "*.uxml": "xml",
+        "*.meta": "yaml",
+        "*.uss": "css",
+        "*.tt": "t4",
+        "*.prefab": "yaml",
+        "*.asset": "yaml",
+        "*.dwlt": "yaml",
+        "xutility": "cpp"
+    }
 }
