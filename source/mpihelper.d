@@ -694,20 +694,20 @@ GroupInfo getGroupInfo(MPI_Group group)
 MPI_Group createGroupInclude(MPI_Group baseGroup, int[] includedRanks)
 {
     MPI_Group result;
-    MPI_Group_incl(baseGroup, includedRanks.length, includedRanks.ptr, result);
+    MPI_Group_incl(baseGroup, cast(int) includedRanks.length, includedRanks.ptr, &result);
     return result;
 }
 
 MPI_Group createGroupExclude(MPI_Group baseGroup, int[] excludedRanks)
 {
     MPI_Group result;
-    MPI_Group_excl(baseGroup, excludedRanks.length, excludedRanks.ptr, result);
+    MPI_Group_excl(baseGroup, cast(int) excludedRanks.length, excludedRanks.ptr, &result);
     return result;
 }
 
 void freeGroup(MPI_Group group)
 {
-    MPI_Group_free(group);
+    MPI_Group_free(&group);
 }
 
 MPI_Comm createComm(MPI_Comm baseComm, MPI_Group baseGroup)
@@ -724,13 +724,16 @@ MPI_Comm createCartesianTopology(
     assert(dimensionLengths.length == dimensionLoopsAround.length);
     MPI_Comm result;
     int reorderInt = cast(int) reorder;
-    MPI_Cart_create(baseComm, dimensionLengths.length, dimensionLengths.ptr, dimensionLoopsAround.ptr, reorderInt, &result);
+    MPI_Cart_create(
+        baseComm, 
+        cast(int) dimensionLengths.length, dimensionLengths.ptr, 
+        dimensionLoopsAround.ptr, reorderInt, &result);
     return result;
 }
 
-int distributeNumNodesOverDimensions(int numNodes, int[] result)
+int getDimensions(int numNodes, int[] result)
 {
-    return MPI_Dims_create(numNodes, result.length, result.ptr);
+    return MPI_Dims_create(numNodes, cast(int) result.length, result.ptr);
 }
 
 /// `indices` contain the ending index one past the end of the last edge index for the given node.
@@ -745,82 +748,100 @@ MPI_Comm createGraph(const(int)[] indices, const(int)[] edges, MPI_Comm baseComm
     MPI_Comm result;
     int reorderInt = cast(int) reorder;
     // They are const in the spec, but not const in the bindings for some reason?
-    MPI_Graph_create(baseComm, indices.length, cast() indices.ptr, cast() edges.ptr, reorderInt, &result);
+    MPI_Graph_create(baseComm, cast(int) indices.length, cast(int*) indices.ptr, cast(int*) edges.ptr, reorderInt, &result);
     return result;
 }
 
 private int* getWeightsPointer(const(int)[] weights)
 {
-    return weights.length == 0 ? cast(int*) MPI_WEIGHTS_EMPTY : cast() weights.ptr;
+    return weights.length == 0 ? (cast(int*) MPI_WEIGHTS_EMPTY) : (cast(int*) weights.ptr);
 }
 
-MPI_Comm createDistributedGraphFromAdjacencies(
-    const(int)[] incomingEdges, const(int)[] incomingEdgeWeights,
-    const(int)[] outgoingEdges, const(int)[] outgoingEdgeWeights,
-    MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
-{
-    assert(incomingEdges.length == incomingEdgeWeights.length);
-    assert(outgoingEdges.length == outgoingEdgeWeights.length);
-    // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=438&zoom=180,65,231
-    MPI_Comm result;
-    int reorderInt = cast(int) reorder;
-    MPI_Dist_graph_create_adjacent(
-        baseComm, 
-        cast() incomingEdges.length, cast() incomingEdges.ptr, getWeightsPointer(incomingEdgeWeights),
-        cast() outgoingEdges.length, cast() outgoingEdges.ptr, getWeightsPointer(outgoingEdgeWeights),
-        info, reorderInt, &result);
-    return result;
-}
 
-MPI_Comm createDistributedGraphFromAdjacenciesUnweighted(
-    const(int)[] incomingEdges, const(int)[] outgoingEdges,
-    MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
+version (MPINotAncient)
 {
-    MPI_Comm result;
-    int reorderInt = cast(int) reorder;
-    MPI_Dist_graph_create_adjacent(
-        baseComm, 
-        cast() incomingEdges.length, cast() incomingEdges.ptr, cast(int*) MPI_UNWEIGHTED,
-        cast() outgoingEdges.length, cast() outgoingEdges.ptr, cast(int*) MPI_UNWEIGHTED,
-        info, reorderInt, &result);
-    return result;
-}
+    MPI_Comm createDistributedGraphFromAdjacencies(
+        const(int)[] incomingEdges, const(int)[] incomingEdgeWeights,
+        const(int)[] outgoingEdges, const(int)[] outgoingEdgeWeights,
+        MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
+    {
+        assert(incomingEdges.length == incomingEdgeWeights.length);
+        assert(outgoingEdges.length == outgoingEdgeWeights.length);
+        // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=438&zoom=180,65,231
+        MPI_Comm result;
+        int reorderInt = cast(int) reorder;
+        MPI_Dist_graph_create_adjacent(
+            baseComm, 
+            cast(int) incomingEdges.length, cast(int*) incomingEdges.ptr, getWeightsPointer(incomingEdgeWeights),
+            cast(int) outgoingEdges.length, cast(int*) outgoingEdges.ptr, getWeightsPointer(outgoingEdgeWeights),
+            info, reorderInt, &result);
+        return result;
+    }
 
-MPI_Comm createDistributedGraphFromNeighborsUnweighted(
-    const(int)[] outgoingEdges, int rank, MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
-{
-    MPI_Comm result;
-    int reorderInt = cast(int) reorder;
-    int degree = outgoingEdges.length;
-    MPI_Dist_graph_create(baseComm, 1, &rank, 
-        &degree, cast() outgoingEdges.ptr, 
-        MPI_UNWEIGHTED, info, reorderInt, &result); 
-    return result;
-}
+    MPI_Comm createDistributedGraphFromAdjacenciesUnweighted(
+        const(int)[] incomingEdges, const(int)[] outgoingEdges,
+        MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
+    {
+        MPI_Comm result;
+        int reorderInt = cast(int) reorder;
+        MPI_Dist_graph_create_adjacent(
+            baseComm, 
+            cast(int) incomingEdges.length, cast(int*) incomingEdges.ptr, cast(int*) MPI_UNWEIGHTED,
+            cast(int) outgoingEdges.length, cast(int*) outgoingEdges.ptr, cast(int*) MPI_UNWEIGHTED,
+            info, reorderInt, &result);
+        return result;
+    }
 
-MPI_Comm createDistributedGraphFromNeighbors(
-    const(int)[] outgoingEdges, const(int)[] outgoingWeights, int rank, MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
-{
-    MPI_Comm result;
-    int reorderInt = cast(int) reorder;
-    int degree = outgoingEdges.length;
-    MPI_Dist_graph_create(baseComm, 1, &rank, 
-        &degree, cast() outgoingEdges.ptr, 
-        getWeightsPointer(outgoingWeights), info, reorderInt, &result); 
-    return result;
+    MPI_Comm createDistributedGraphFromNeighborsUnweighted(
+        const(int)[] outgoingEdges, int rank, MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
+    {
+        MPI_Comm result;
+        int reorderInt = cast(int) reorder;
+        int degree = cast(int) outgoingEdges.length;
+        MPI_Dist_graph_create(baseComm, 1, &rank, 
+            &degree, cast(int*) outgoingEdges.ptr, 
+            cast(int*) MPI_UNWEIGHTED, info, reorderInt, &result); 
+        return result;
+    }
+
+    MPI_Comm createDistributedGraphFromNeighbors(
+        const(int)[] outgoingEdges, const(int)[] outgoingWeights, int rank, MPI_Comm baseComm = MPI_COMM_WORLD, bool reorder = false, MPI_Info info = MPI_INFO_NULL)
+    {
+        MPI_Comm result;
+        int reorderInt = cast(int) reorder;
+        int degree = cast(int) outgoingEdges.length;
+        MPI_Dist_graph_create(baseComm, 1, &rank, 
+            &degree, cast(int*) outgoingEdges.ptr, 
+            getWeightsPointer(outgoingWeights), info, reorderInt, &result); 
+        return result;
+    }
 }
 
 int getCartesianRank(MPI_Comm comm, const(int)[] coordinates)
 {
     int result;
-    MPI_Cart_rank(comm, &result, cast() coordinates.ptr);
+    MPI_Cart_rank(comm, cast(int*) coordinates.ptr, &result);
     return result;
 }
 
 int getCartesianCoordinates(MPI_Comm comm, int rank, int[] coordinates)
 {
-    return MPI_Cart_coords(comm, rank, coordinates.length, coordinates.ptr);
+    return MPI_Cart_coords(comm, rank, cast(int) coordinates.length, coordinates.ptr);
 }
+
+struct OffsetRanksTuple
+{
+    int[2] arrayof;
+    ref int sourceRank() return { return arrayof[0]; } 
+    ref int destinationRank() return { return arrayof[1]; } 
+}
+
+OffsetRanksTuple getCartesianShift(MPI_Comm comm, int axisIndex, int offset)
+{
+    OffsetRanksTuple result;
+    MPI_Cart_shift(comm, axisIndex, offset, &(result.sourceRank()), &(result.destinationRank()));
+    return result;
+} 
 
 // MPI_Comm createGraph(const(int)[][] edges, bool reorder = false, MPI_Comm baseComm = MPI_COMM_WORLD)
 // {
