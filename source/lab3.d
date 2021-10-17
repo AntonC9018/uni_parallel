@@ -45,9 +45,6 @@ int main()
 
     version (WithActualMatrix)
     {
-        version (SimpleTest) 
-            assert(0, "WithActualMatrix is incompatible with SimpleTest");
-        
         int[] matrixData;
         if (myComputeRank == rootRankInComputeGrid)
         {
