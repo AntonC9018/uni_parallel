@@ -440,4 +440,4 @@ Process 1 at coordinates [1, 0] received 39856 items. The crunched amount came o
 
 ## Întregul cod
 
-Vedeți [github](https://github.com/AntonC9018/uni_parallel/blob/95f998152788396c5360766d54466966bef77837/source/lab2.d).
+Vedeți [github](https://github.com/AntonC9018/uni_parallel/blob/ad01314461ee0b08524f910f33b9f3f6d8755030/source/lab3.d).
