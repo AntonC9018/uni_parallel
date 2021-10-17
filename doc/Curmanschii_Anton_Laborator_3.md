@@ -86,7 +86,7 @@ int myComputeRank = info.rank;
 
 Cum s-a menționat anterior, matricea este de fapt inițializată la root numai dacă dați flagul `-version=WithActualMatrix` la compilare.
 
-`matrixDimensions.fold!`a * b`(1)` calculează produsul tuturor elementelor (de fapt se face `1 * matrixDimensions[0] * matrixDimensions[1]`).
+`matrixDimensions.fold!"a * b"(1)` calculează produsul tuturor elementelor (de fapt se face `1 * matrixDimensions[0] * matrixDimensions[1]`).
 
 ```d
 int[NUM_DIMS] matrixDimensions;
@@ -274,7 +274,7 @@ Unele explicații:
 
 > Această parte de algoritm este legată cu numărul de dimensiuni al matricei (avem DOUĂ cicluri imbricate, și mai un ciclu pentru rânduri). 
 > Trebuie să generalizez $ N $ cicluri `for` imbricate și $ N - 1 $ cicluri cu minimum imbricate, ca să ating aceasta.
-> Eu cunosc algoritmul pentru aceasta, care deja într-un mod mai simplu l-am realizat în funcția `nDimensionalIndices` (se duce de la 0 la N, adică nu are aceste limite ca la `iota`).
+> Eu cunosc algoritmul pentru aceasta, care deja într-un mod mai simplu l-am realizat în funcția `nDimensionalIndices` (se duce de la $ 0 $ la $ N $, adică nu are aceste limite ca la `iota`).
 > Însă pentru așa ceva ar fi probabil mai bine să utilizez o librărie.
 
 ```d
