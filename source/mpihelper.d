@@ -597,18 +597,20 @@ struct MemoryWindow(T)
             getOpHandleWithChecks(op), handle);
     }
 
-    // Not available in this MPI version apparently
-    // int compareAndSwap(
-    //     T* replacement, T* compareAgainst, T* destinationBeforeSwap, 
-    //     size_t startIndex, int targetRank)
-    // {
-    //     static assert(!IsCustomDatatype!T);
+    version (MPINotAncient)
+    {
+        int compareAndSwap(
+            T* replacement, T* compareAgainst, T* destinationBeforeSwap, 
+            size_t startIndex, int targetRank)
+        {
+            static assert(!IsCustomDatatype!T);
 
-    //     return MPI_Compare_and_swap(
-    //         replacement, compareAgainst, destinationBeforeSwap, 
-    //         Datatype!T, targetRank, cast(MPI_Aint) (startIndex * T.sizeof), 
-    //         handle);
-    // }
+            return MPI_Compare_and_swap(
+                replacement, compareAgainst, destinationBeforeSwap, 
+                Datatype!T, targetRank, cast(MPI_Aint) (startIndex * T.sizeof), 
+                handle);
+        }
+    }
 
     // T getSync(size_t index = 0)
     // {
@@ -636,7 +638,7 @@ auto createMemoryWindow(T)(T value, MPI_Info info = MPI_INFO_NULL, MPI_Comm comm
     return window;
 }
 
-auto acquireMemoryWindow(ElementType)(MPI_Aint length, MPI_Info info = MPI_INFO_NULL, MPI_Comm comm = MPI_COMM_WORLD)
+auto acquireMemoryWindow(ElementType)(MPI_Info info = MPI_INFO_NULL, MPI_Comm comm = MPI_COMM_WORLD)
 {
     MemoryWindow!ElementType result = void;
     MPI_Win_create(MPI_BOTTOM, 0, 1, info, comm, &(result.handle));

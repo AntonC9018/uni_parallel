@@ -4,7 +4,8 @@ int main()
     import mh = mpihelper;
     import std.stdio : writeln;
     import std.random : uniform;
-    import std.algorithm : fold;
+    import std.algorithm : fold, min;
+    import std.range : iota;
 
     auto info = mh.initialize();
     scope(exit) mh.finalize();
@@ -12,7 +13,7 @@ int main()
     enum NUM_DIMS = 2;
 
     int[NUM_DIMS] computeGridDimensions = 0; 
-    version (Simple)
+    version (SimpleTest)
     {
         mh.abortIf(info.size != 6, "The number of processes for the simple case must be 6.");
         computeGridDimensions = [2, 3];
@@ -27,9 +28,10 @@ int main()
     mh.getCartesianCoordinates(topologyComm, info.rank, mycoords[]);
     // We have passed reorder = false.
     int rootRankInComputeGrid = 0;
+    int myComputeRank = info.rank;
 
     int[NUM_DIMS] matrixDimensions;
-    version (Simple)
+    version (SimpleTest)
     {
         matrixDimensions = [9, 9];
     }
@@ -41,8 +43,22 @@ int main()
         matrixDimensions[1] = 1000 - matrixDimensions[0];
     }
 
+    version (WithActualMatrix)
+    {
+        version (SimpleTest) 
+            assert(0, "WithActualMatrix is incompatible with SimpleTest");
+        
+        int[] matrixData;
+        if (myComputeRank == rootRankInComputeGrid)
+        {
+            matrixData = new int[](matrixDimensions.fold!`a * b`(1));
+            foreach (ref element; matrixData)
+                element = uniform!uint % 5 + 1;
+        }
+    }
+
     int blockSize;
-    version (Simple)
+    version (SimpleTest)
     {
         blockSize = 2;
     }
@@ -101,13 +117,6 @@ int main()
         return workSize;
     }
 
-    // At root, we allocate the max possible buffer.
-    // The first process in the compute grid will always have most load.
-    // Since the root always distributes, it must be able to handle a buffer of that size too.
-    int[NUM_DIMS] targetProcessCoords = mycoords;
-    if (info.rank == rootRankInComputeGrid) 
-        targetProcessCoords = 0;
-    int[] buffer = new int[](getWorkSizeForProcessAt(targetProcessCoords));
 
     // The random computation that each process has to do.
     static int crunch(int[] buf)
@@ -116,39 +125,90 @@ int main()
         return buf.fold!`a + b`(0);
     }
 
-    // This function may have arbitrary logic.
-    // Currently, just fill the buffer with sane random numbers.
-    static void prepareBuffer(int[] buffer, int[NUM_DIMS] coords)
-    {
-        foreach (ref item; buffer)
-        {
-            version (Simple)
-                item = (coords[0] + 1) * (coords[1] + 1);
-            else
-                item = uniform!uint % 5 + 1;
-        }
-    }
 
-    if (info.rank == rootRankInComputeGrid)
+    version (WithActualMatrix)
     {
-        foreach (int[NUM_DIMS] coords; nDimensionalIndices(computeGridDimensions))
+        // Let's make use of RMA, because it's neat.
+        mh.MemoryWindow!int matrixWindow;
+        scope(exit) matrixWindow.free();
+        if (myComputeRank == rootRankInComputeGrid)
+            matrixWindow = mh.createMemoryWindow(matrixData, MPI_INFO_NULL, topologyComm);
+        else
+            matrixWindow = mh.acquireMemoryWindow!int(MPI_INFO_NULL, topologyComm);
+
+        int[] buffer = new int[](getWorkSizeForProcessAt(mycoords));
+
+        matrixWindow.fence();
+
+        size_t bufferIndex = 0;
+        foreach (int rowIndex; iota(mycoords[0] * blockSize, matrixDimensions[0], computeGridDimensions[0] * blockSize))
+        foreach (int colIndex; iota(mycoords[1] * blockSize, matrixDimensions[1], computeGridDimensions[1] * blockSize))
+        foreach (int actualRowIndex; rowIndex..min(rowIndex + blockSize, matrixDimensions[0]))
         {
-            if (coords == mycoords)
-                continue;
-            int[] sendBuffer = buffer[0..getWorkSizeForProcessAt(coords)];
-            prepareBuffer(sendBuffer, coords);
-            int destRank = mh.getCartesianRank(topologyComm, coords[]);
-            mh.send(sendBuffer, destRank, 10, topologyComm);
+            int colRecvSize = min(blockSize, matrixDimensions[1] - colIndex);
+            int linearIndexInMatrix = actualRowIndex * blockSize + colIndex;
+            matrixWindow.get(
+                buffer[bufferIndex .. bufferIndex += colRecvSize], 
+                linearIndexInMatrix, rootRankInComputeGrid);
         }
-        // Prepare own share.
-        prepareBuffer(buffer, mycoords);
+        assert(bufferIndex == buffer.length);
+
+        matrixWindow.fence();
     }
-    else
+    else // version (!WithActualMatrix)
     {
-        mh.recv(buffer, rootRankInComputeGrid, 10, MPI_STATUS_IGNORE, topologyComm);
-    }
-    
-    // Compute
+        // At root, we allocate the max possible buffer.
+        // The first process in the compute grid will always have most load.
+        // Since the root always distributes, it must be able to handle a buffer of that size too.
+        int[NUM_DIMS] targetProcessCoords = mycoords;
+        if (myComputeRank == rootRankInComputeGrid) 
+            targetProcessCoords = 0;
+        int[] buffer = new int[](getWorkSizeForProcessAt(targetProcessCoords));
+
+        
+        
+        // We will send the buffers individually to each process.
+        const tag = 10;
+        if (myComputeRank == rootRankInComputeGrid)
+        {
+            // This function may have arbitrary logic.
+            // Currently, just fill the buffer with sane random numbers.
+            static void prepareBuffer(int[] buffer, int[NUM_DIMS] coords)
+            {
+                foreach (ref item; buffer)
+                    version (SimpleTest)
+                        item = (coords[0] + 1) * (coords[1] + 1);
+                    else
+                        item = uniform!uint % 5 + 1;
+            }
+
+            // Another idea is to check out all coords
+            // foreach (int[NUM_DIMS] coords; nDimensionalIndices(computeGridDimensions))
+            // {
+            //     if (coords == mycoords)
+            //         continue;
+            //     int destRank = mh.getCartesianRank(topologyComm, coords[]);
+
+            // Implement the simpler idea: iterating over ranks rather than coords.
+            foreach (int destRank; 0..info.size)
+            {
+                if (destRank == rootRankInComputeGrid)
+                    continue;
+                int[NUM_DIMS] coords;
+                mh.getCartesianCoordinates(topologyComm, destRank, coords[]);
+                int[] sendBuffer = buffer[0..getWorkSizeForProcessAt(coords)];
+                prepareBuffer(sendBuffer, coords);
+                mh.send(sendBuffer, destRank, tag, topologyComm);
+            }
+            // Prepare own share.
+            prepareBuffer(buffer, mycoords);
+        }
+        else
+        {
+            mh.recv(buffer, rootRankInComputeGrid, tag, MPI_STATUS_IGNORE, topologyComm);
+        }
+    }    
+
     int result = crunch(buffer);
 
     writeln(

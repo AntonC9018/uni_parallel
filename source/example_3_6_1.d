@@ -86,7 +86,7 @@ else
             if (info.rank == root)
                 calculatedPiWindow = mh.createMemoryWindow(&calculatedPi);
             else
-                calculatedPiWindow = mh.acquireMemoryWindow!double(1);
+                calculatedPiWindow = mh.acquireMemoryWindow!double;
         }
         void freeWindow()
         {
@@ -106,7 +106,7 @@ else
             if (isRoot)
                 calculatedPiWindow = mh.createMemoryWindow(&calculatedPi);
             else
-                calculatedPiWindow = mh.acquireMemoryWindow!double(1);
+                calculatedPiWindow = mh.acquireMemoryWindow!double;
         }
 
         double h = 1.0 / cast(double) numberOfIterations;
