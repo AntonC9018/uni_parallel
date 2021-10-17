@@ -11,14 +11,14 @@ Vedeți [github-ul](https://github.com/AntonC9018/uni_parallel).
 
 Să se elaboreze un program pentru gestionarea grupelor de procese și a cominicatoarelor 
 în care să se realizeze următoarele: 
-* un mediul de comunicare care corespunde unei grile doi-dimensionale de procese;
-* inițializarea cu valori aleatoare a unei matrice de către root 
-  și distribuirea pe procesele din grila de procese aceasta matrice în baza algoritmului 2D-ciclic.
+* un mediu de comunicare care corespunde unei grile doi-dimensionale de procese;
+* inițializarea cu valori aleatorii a unei matrice de către root 
+  și distribuirea aceastei matrice pe procese din grilă de procese în baza algoritmului 2D-ciclic.
 
 
 ## Introducere
 
-Desenul de mai jos ilustrează ideea. Lucrul (din matricea din stânga) este distribuit proceselor (din grila din dreapta) conform culorilor. Fiecare pătrat mare este un bloc de lucru, fiecare pătrățel este o unitate de lucru (o celulă). Mai jos blocurile de lucru au fost atribuite valori (numărul este copiat în fiecare celulă), iar procesele au calculat (crunch) rezultatul computații (în acest caz, suma $=$ valoarea în fiecare celulă $\times$ numărul de celule). 
+Desenul de mai jos ilustrează ideea. Lucrul (din matricea din stânga) este distribuit proceselor (din grila din dreapta) conform culorilor. Fiecare pătrat mare este un bloc de lucru, fiecare pătrățel este o unitate de lucru (o celulă). Mai jos, blocurile de lucru au fost atribuite valori (numărul se aplică la fiecare celulă din bloc), iar procesele au calculat (crunch) rezultatul computații (în acest caz, suma $=$ valoarea în fiecare celulă $\times$ numărul de celule). 
 
 ![](images/lab3_diagram.jpg)
 
@@ -42,7 +42,7 @@ Care versiune anume s-ar compila se determină prin utilizarea flagurilor `versi
   Valorile sunt distribuite "fals", adică matricea niciodată nu există în întregime în memorie contiguă.
   Celulile primesc valori aleatorii din intervalul $ [ 1, 5 ] $.
   Mărimea blocului este aleatoare din intervalul $ [ 2, 17 ] $. 
-* `-version=SimpleTest`. Fixează dimensiunile grilei de computație la $ (2, 3) $, 
+* `-version=SimpleTest`. Fixează dimensiunile grilei de procese la $ (2, 3) $, 
   dimensiunile matricei de valori la $ (9, 9) $, mărimea blocului la $ 2 $.
   Inițializează matricea cu unele valori ușoare de verificat (dacă nu este dat următorul flag).
 * `-version=WithActualMatrix`. Inițializează întreaga matrice la root. 
@@ -196,7 +196,8 @@ int getWorkSizeForProcessAt(int[NUM_DIMS] coords)
 }
 ```
 
-Dacă are loc distribuire valorilor "falsă", root-ul alocă un bufer maximal (deoarece îl va umpla cu valorile de transmis), iar celelalte procese alocă un bufer pentru primirea datelor.
+Dacă are loc distribuirea valorilor "falsă", root-ul alocă un bufer maximal (deoarece îl va umpla cu valorile de transmis), iar celelalte procese alocă un bufer pentru primirea datelor.
+De notat faptul că procesul pe poziția $(0, 0)$ va primi mereu mărimea maximală de lucru.
 
 ```d
 // At root, we allocate the max possible buffer.
@@ -208,7 +209,7 @@ if (myComputeRank == rootRankInComputeGrid)
 int[] buffer = new int[](getWorkSizeForProcessAt(targetProcessCoords));
 ```
 
-În cazul în care procesul root alocă întreagă matrice, fiecare proces își alocă buferul într-un mod simetric.
+În cazul în care procesul root alocă întreaga matrice, fiecare proces își alocă buferul în mod simetric.
 
 ```d
 int[] buffer = new int[](getWorkSizeForProcessAt(mycoords));
@@ -217,7 +218,7 @@ int[] buffer = new int[](getWorkSizeForProcessAt(mycoords));
 
 ### Distribuirea valorilor
 
-În cazul distibuirii "false", procesul root calculează câți numere celălalt proces trebuie să primească, și își umplă buferul cu atât număr de numeri aleatorii, după ce are loc transmiterea datelor.
+În cazul distibuirii "false", procesul root calculează câți numeri celălalt proces trebuie să primească, și își umplă buferul cu atâți numeri aleatorii, după ce are loc transmiterea datelor.
 Celelalte procese pur și simplu primesc valori de la root.
 
 ```d
@@ -263,7 +264,7 @@ else
 }
 ```
 
-În cazul în care se folosește o matrice reală, folosesc RMA. Procesul root își expune buferul, iar celelalte procese își calculează indicii de pe care se vor lua valori și le solicită într-un ciclu.
+În cazul în care se folosește o matrice reală, folosesc RMA. Procesul root își expune buferul, iar celelalte procese își calculează indicii de pe care se vor lua valorile și le solicită într-un ciclu.
 
 Unele explicații:
 * `mh.MemoryWindow`, `matrixWindow.free`, `mh.createMemoryWindow`, `mh.acquireMemoryWindow`, `matrixWindow.get` sunt evident wrapper-urile mele care înțeleg sistemul de tipuri în D. Ele utilizează funcții MPI în implementare.
