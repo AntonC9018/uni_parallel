@@ -22,7 +22,7 @@ $
 
 ## Realizarea
 
-Deci, descriu în scurt alogritmul:
+Deci, descriu în scurt algoritmul:
 
 1. Procesele sunt plasate într-o topologie carteziană.
 2. Se selectează aleator o axă. Se selectează aleator o fațetă prin care trece această axă. 

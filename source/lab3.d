@@ -38,8 +38,8 @@ int main()
     else
     {
         if (info.rank == 0)
-            matrixDimensions[0] = uniform!uint % 900 + 100;
-        mh.bcast(&matrixDimensions[0], 0);
+            matrixDimensions[0] = uniform!uint % 800 + 100;
+        mh.bcast(&(matrixDimensions[0]), 0);
         matrixDimensions[1] = 1000 - matrixDimensions[0];
     }
 
@@ -76,18 +76,14 @@ int main()
     // Ceiling. Includes the last block.
     int[NUM_DIMS] blockCounts = (matrixDimensions[] + blockSize - 1) / blockSize;
     // Last column or row may be incomplete
-    int[NUM_DIMS] lastBlockSizes = matrixDimensions[] - (blockCounts[] - 1) * blockSize;
+    int[NUM_DIMS] lastBlockSizes = matrixDimensions[] % blockSize;
+    int[NUM_DIMS] wholeBlockCountsPerProcess = matrixDimensions[] / (blockSize * computeGridDimensions[]);
+    int[NUM_DIMS] blockIndicesOfLastProcess = blockCounts[] - wholeBlockCountsPerProcess[] * computeGridDimensions[] - 1;
 
-    // If the block size divides the width (height), the last block will be nonexistent.
-    // For the sake of symmetry, we prevent that. 
-    // lastBlockSizes[] += blockSize;
-    int[NUM_DIMS] wholeBlocksCounts = blockCounts[] / computeGridDimensions[];
-    int[NUM_DIMS] wholeBlocksRemainders = blockCounts[] % computeGridDimensions[];
-    
     int getWorkSizeForProcessAt(int[NUM_DIMS] coords)
     {
         int workSize = 1;
-        foreach (dimIndex, wholeBlocksCount; wholeBlocksCounts)
+        foreach (dimIndex, wholeBlocksCount; wholeBlockCountsPerProcess)
         {
             int dimWorkSize = wholeBlocksCount * blockSize;
 
@@ -96,15 +92,15 @@ int main()
             // [][][][][][][][][][]  ()()()()
             // Every process gets 2 blocks each, 2 more blocks remain:
             // [][] ()()()()
-            // So if we take the remainder of 10 / 4 we get 2, 
+            // So if we subtract 10 - 8 we get 2, 
             // and the second process gets the last block.
             // The other processes that are to the right of it essentially get one less block.
-            int remainder1 = wholeBlocksRemainders[dimIndex] - 1;
-            if (coords[dimIndex] < remainder1)
+            int index = blockIndicesOfLastProcess[dimIndex];
+            if (coords[dimIndex] < index)
             {
                 dimWorkSize += blockSize;
             }
-            else if (coords[dimIndex] == remainder1)
+            else if (coords[dimIndex] == index)
             {
                 dimWorkSize += lastBlockSizes[dimIndex];
             }
@@ -115,16 +111,10 @@ int main()
     }
 
 
-    // The random computation that each process has to do.
-    static int crunch(int[] buf)
-    {
-        // return buf.fold!`a * b`(1);
-        return buf.fold!`a + b`(0);
-    }
-
-
     version (WithActualMatrix)
     {
+        int[] buffer = new int[](getWorkSizeForProcessAt(mycoords));
+
         // Let's make use of RMA, because it's neat.
         mh.MemoryWindow!int matrixWindow;
         scope(exit) matrixWindow.free();
@@ -132,8 +122,6 @@ int main()
             matrixWindow = mh.createMemoryWindow(matrixData, MPI_INFO_NULL, topologyComm);
         else
             matrixWindow = mh.acquireMemoryWindow!int(MPI_INFO_NULL, topologyComm);
-
-        int[] buffer = new int[](getWorkSizeForProcessAt(mycoords));
 
         matrixWindow.fence();
 
@@ -202,8 +190,15 @@ int main()
         {
             mh.recv(buffer, rootRankInComputeGrid, tag, MPI_STATUS_IGNORE, topologyComm);
         }
-    }    
+    }
 
+    
+    // The random computation that each process has to do.
+    static int crunch(int[] buf)
+    {
+        // return buf.fold!`a * b`(1);
+        return buf.fold!`a + b`(0);
+    }
     int result = crunch(buffer);
 
     writeln(
