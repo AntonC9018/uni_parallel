@@ -161,8 +161,6 @@ int main()
         if (myComputeRank == rootRankInComputeGrid) 
             targetProcessCoords = 0;
         int[] buffer = new int[](getWorkSizeForProcessAt(targetProcessCoords));
-
-        
         
         // We will send the buffers individually to each process.
         const tag = 10;
