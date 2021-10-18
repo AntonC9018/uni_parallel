@@ -161,7 +161,7 @@ Funcția `getWorkSizeForProcessAt` returnează de fapt valorile din dreapta din 
 // Ceiling. Includes the last block.
 int[NUM_DIMS] blockCounts = (matrixDimensions[] + blockSize - 1) / blockSize;
 // Last column or row may be incomplete
-int[NUM_DIMS] lastBlockSizes = matrixDimensions[] % blockSize;
+int[NUM_DIMS] lockSizes = matrixDimensions[] - (blockCounts[] - 1) * blockSize;
 int[NUM_DIMS] wholeBlockCountsPerProcess = matrixDimensions[] / (blockSize * computeGridDimensions[]);
 int[NUM_DIMS] blockIndicesOfLastProcess = blockCounts[] - wholeBlockCountsPerProcess[] * computeGridDimensions[] - 1;
 
@@ -440,11 +440,6 @@ Process 1 at coordinates [1, 0] received 39856 items. The crunched amount came o
 
 `128896 true`
 
-## Întregul cod
-
-Vedeți [github](https://github.com/AntonC9018/uni_parallel/blob/ad01314461ee0b08524f910f33b9f3f6d8755030/source/lab3.d).
-
-> Are cel puțin o greșeală, rulați verisunea actualizată.
 
 ## Actualizare: Afișarea matricei
 
@@ -610,3 +605,7 @@ Process' [1, 2] matrix
   1  2
 Process 5 at coordinates [1, 2] received 8 items. The crunched amount came out to 24
 ```
+
+## Întregul cod
+
+Vedeți [github](https://github.com/AntonC9018/uni_parallel/blob/16ecf1fad0a632b6fd6fb784ad7a89eb3d8c28ef/source/lab3.d).
