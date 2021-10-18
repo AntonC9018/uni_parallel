@@ -463,7 +463,7 @@ if (info.rank == 0)
 mh.bcast(&blockSize, 0);
 ```
 
-Am adăugat o funcție ce afișează matricea. Trece print toate rândurile, și afișează toate elementele, unu câte unu:
+Am adăugat o funcție ce afișează matricea. Trece prin toate liniile, și afișează toate elementele, unu câte unu:
 ```d
 version (PrintMatrix)
 {
