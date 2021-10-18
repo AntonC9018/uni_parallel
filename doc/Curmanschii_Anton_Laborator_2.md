@@ -281,6 +281,26 @@ The process has been aborted: At least two of the dimensions were 1. Please sele
 
 ```
 
+Un cub $ 4 \times 4 \times 4 $:
+
+```
+$ mpirun -np 64 -host "compute-0-0,compute-0-1,compute-0-2" lab2.out
+Computed dimensions: [4, 4, 4]
+Selected fixed axis index is 1 with coordinate 0
+Process with rank 48 and coordinates [3, 0, 0] sent message 48 to process 49 at coordinates [3, 0, 1] and received 32 from 32 at coordinates [2, 0, 0]
+Process with rank 19 and coordinates [1, 0, 3] sent message 19 to process 3 at coordinates [0, 0, 3] and received 35 from 35 at coordinates [2, 0, 3]
+Process with rank 16 and coordinates [1, 0, 0] sent message 16 to process 32 at coordinates [2, 0, 0] and received 0 from 0 at coordinates [0, 0, 0]
+Process with rank 32 and coordinates [2, 0, 0] sent message 32 to process 48 at coordinates [3, 0, 0] and received 16 from 16 at coordinates [1, 0, 0]
+Process with rank 2 and coordinates [0, 0, 2] sent message 2 to process 1 at coordinates [0, 0, 1] and received 3 from 3 at coordinates [0, 0, 3]
+Process with rank 1 and coordinates [0, 0, 1] sent message 1 to process 0 at coordinates [0, 0, 0] and received 2 from 2 at coordinates [0, 0, 2]
+Process with rank 3 and coordinates [0, 0, 3] sent message 3 to process 2 at coordinates [0, 0, 2] and received 19 from 19 at coordinates [1, 0, 3]
+Process with rank 51 and coordinates [3, 0, 3] sent message 51 to process 35 at coordinates [2, 0, 3] and received 50 from 50 at coordinates [3, 0, 2]
+Process with rank 35 and coordinates [2, 0, 3] sent message 35 to process 19 at coordinates [1, 0, 3] and received 51 from 51 at coordinates [3, 0, 3]
+Process with rank 49 and coordinates [3, 0, 1] sent message 49 to process 50 at coordinates [3, 0, 2] and received 48 from 48 at coordinates [3, 0, 0]
+Process with rank 50 and coordinates [3, 0, 2] sent message 50 to process 51 at coordinates [3, 0, 3] and received 49 from 49 at coordinates [3, 0, 1]
+Process with rank 0 and coordinates [0, 0, 0] sent message 0 to process 16 at coordinates [1, 0, 0] and received 1 from 1 at coordinates [0, 0, 1]
+```
+
 ## Întregul cod
 
 Vedeți [github](https://github.com/AntonC9018/uni_parallel/blob/95f998152788396c5360766d54466966bef77837/source/lab2.d).

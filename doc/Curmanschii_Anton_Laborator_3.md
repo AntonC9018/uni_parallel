@@ -256,6 +256,7 @@ if (myComputeRank == rootRankInComputeGrid)
         mh.send(sendBuffer, destRank, tag, topologyComm);
     }
     // Prepare own share.
+    buffer = buffer[0..getWorkSizeForProcessAt(mycoords)];
     prepareBuffer(buffer, mycoords);
 }
 else
@@ -295,7 +296,7 @@ foreach (int colIndex; iota(mycoords[1] * blockSize, matrixDimensions[1], comput
 foreach (int actualRowIndex; rowIndex..min(rowIndex + blockSize, matrixDimensions[0]))
 {
     int colRecvSize = min(blockSize, matrixDimensions[1] - colIndex);
-    int linearIndexInMatrix = actualRowIndex * blockSize + colIndex;
+    int linearIndexInMatrix = actualRowIndex * matrixDimensions[1] + colIndex;
     matrixWindow.get(
         buffer[bufferIndex .. bufferIndex += colRecvSize], 
         linearIndexInMatrix, rootRankInComputeGrid);
@@ -442,3 +443,170 @@ Process 1 at coordinates [1, 0] received 39856 items. The crunched amount came o
 ## Întregul cod
 
 Vedeți [github](https://github.com/AntonC9018/uni_parallel/blob/ad01314461ee0b08524f910f33b9f3f6d8755030/source/lab3.d).
+
+> Are cel puțin o greșeală, rulați verisunea actualizată.
+
+## Actualizare: Afișarea matricei
+
+Ca matricea să se încadreze pe ecran, trebuia să micșorez dimensiunea matricei default.
+De fapt, am adăugat câte două variabile în cod pentru dimensiunea matricei și pentru lungimea blocului:
+
+```d
+enum minDimension = 10;
+enum maxDimension = 40;
+if (info.rank == 0)
+    matrixDimensions[0] = uniform!uint % (maxDimension - minDimension * 2) + minDimension;
+mh.bcast(&(matrixDimensions[0]), 0);
+matrixDimensions[1] = maxDimension - matrixDimensions[0];
+
+// ...
+
+enum minBlockSize = 2;
+enum maxBlockSize = 6;
+if (info.rank == 0)
+    blockSize = uniform!uint % (maxBlockSize - minBlockSize) + minBlockSize;
+mh.bcast(&blockSize, 0);
+```
+
+Am adăugat o funcție ce afișează matricea. Trece print toate rândurile, și afișează toate elementele, unu câte unu:
+```d
+version (PrintMatrix)
+{
+    void printAsMatrix(int[] data, int width)
+    {
+        import std.stdio : writef;
+        foreach (rowStartIndex; iota(0, data.length, width))
+        {
+            foreach (i; 0..width)
+                writef("%3d", data[rowStartIndex + i]);
+            writeln();
+        }
+    }
+}
+```
+
+Dacă matricea nu este "falsă", o afișăm la root (deja șede într-un `if`):
+```d
+version (WithActualMatrix) version (PrintMatrix)
+{
+    writeln("Entire matrix: ");
+    printAsMatrix(matrixData, matrixDimensions[1]);
+}
+```
+
+Vom avea nevoie să găsim câte elemente are lungimea / lațimea pentru a afișa matricea corect.
+Am scos o funcție pentru aceasta din `getWorkSizeForProcessAt`.
+Logica este aceeași.
+
+```d
+int getWorkSizeAtDimension(size_t dimIndex, int coord)
+{
+    int dimWorkSize = wholeBlockCountsPerProcess[dimIndex] * blockSize;
+    
+    int index = blockIndicesOfLastProcess[dimIndex];
+    if (coord < index)
+    {
+        dimWorkSize += blockSize;
+    }
+    else if (coord == index)
+    {
+        dimWorkSize += lastBlockSizes[dimIndex];
+    }
+
+    return dimWorkSize;
+}
+
+int getWorkSizeForProcessAt(int[NUM_DIMS] coords)
+{
+    int workSize = 1;
+    foreach (dimIndex, coord; coords)
+        workSize *= getWorkSizeAtDimension(dimIndex, coord);
+    return workSize;
+}
+```
+
+În ciclurile cu comunicarea RMA trebuia încă să schimb ordinea de la:
+```d
+foreach (int colIndex; iota(mycoords[1] * blockSize, matrixDimensions[1], computeGridDimensions[1] * blockSize))
+foreach (int actualRowIndex; rowIndex..min(rowIndex + blockSize, matrixDimensions[0]))
+```
+
+la 
+
+```d
+foreach (int actualRowIndex; rowIndex..min(rowIndex + blockSize, matrixDimensions[0]))
+foreach (int colIndex; iota(mycoords[1] * blockSize, matrixDimensions[1], computeGridDimensions[1] * blockSize))
+```
+
+În alt caz nu am primi valori strict după linii. 
+
+Și am adăugat afișarea, cu `Thread.sleep` ca să fie sincronizată:
+
+```d
+version (PrintMatrix)
+{
+    import core.thread;
+    Thread.sleep(dur!"msecs"(20 * info.rank));
+    writeln("Process' ", mycoords, " matrix");
+    printAsMatrix(buffer, getWorkSizeAtDimension(1, mycoords[1]));
+}
+```
+
+### Test
+
+```
+$ ./compile.sh lab3 -version=PrintMatrix -version=WithActualMatrix -version=SimpleTest
+$ mpirun -np 6 lab3.out
+Compute grid dimensions: [2, 3]
+Matrix dimensions: [9, 9]
+Block size: 2
+Entire matrix:
+  3  2  2  4  1  4  3  1  3
+  3  1  2  1  5  2  2  2  3
+  4  2  4  5  4  3  3  2  3
+  4  2  5  2  4  5  5  5  5
+  4  2  5  2  1  3  2  4  5
+  1  3  3  2  3  1  3  4  3
+  2  4  4  3  4  1  2  4  1
+  2  3  2  2  1  2  1  2  1
+  1  5  2  5  1  2  1  5  1
+Process' [0, 0] matrix
+  3  2  3  1
+  3  1  2  2
+  4  2  2  4
+  1  3  3  4
+  1  5  1  5
+Process 0 at coordinates [0, 0] received 20 items. The crunched amount came out to 52
+Process' [0, 1] matrix
+  2  4  3
+  2  1  3
+  5  2  5
+  3  2  3
+  2  5  1
+Process 1 at coordinates [0, 1] received 15 items. The crunched amount came out to 43
+Process' [0, 2] matrix
+  1  4
+  5  2
+  1  3
+  3  1
+  1  2
+Process 2 at coordinates [0, 2] received 10 items. The crunched amount came out to 23
+Process' [1, 0] matrix
+  4  2  3  2
+  4  2  5  5
+  2  4  2  4
+  2  3  1  2
+Process 3 at coordinates [1, 0] received 16 items. The crunched amount came out to 47
+Process' [1, 1] matrix
+  4  5  3
+  5  2  5
+  4  3  1
+  2  2  1
+Process 4 at coordinates [1, 1] received 12 items. The crunched amount came out to 37
+Process' [1, 2] matrix
+  4  3
+  4  5
+  4  1
+  1  2
+Process 5 at coordinates [1, 2] received 8 items. The crunched amount came out to 24
+```

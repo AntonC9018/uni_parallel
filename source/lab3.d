@@ -37,10 +37,26 @@ int main()
     }
     else
     {
+        enum minDimension = 10;
+        enum maxDimension = 40;
         if (info.rank == 0)
-            matrixDimensions[0] = uniform!uint % 800 + 100;
+            matrixDimensions[0] = uniform!uint % (maxDimension - minDimension * 2) + minDimension;
         mh.bcast(&(matrixDimensions[0]), 0);
-        matrixDimensions[1] = 1000 - matrixDimensions[0];
+        matrixDimensions[1] = maxDimension - matrixDimensions[0];
+    }
+
+    version (PrintMatrix)
+    {
+        void printAsMatrix(int[] data, int width)
+        {
+            import std.stdio : writef;
+            foreach (rowStartIndex; iota(0, data.length, width))
+            {
+                foreach (i; 0..width)
+                    writef("%3d", data[rowStartIndex + i]);
+                writeln();
+            }
+        }
     }
 
     version (WithActualMatrix)
@@ -61,8 +77,10 @@ int main()
     }
     else
     {
+        enum minBlockSize = 2;
+        enum maxBlockSize = 6;
         if (info.rank == 0)
-            blockSize = uniform!uint % 16 + 2;
+            blockSize = uniform!uint % (maxBlockSize - minBlockSize) + minBlockSize;
         mh.bcast(&blockSize, 0);
     }
     
@@ -71,6 +89,12 @@ int main()
         writeln("Compute grid dimensions: ", computeGridDimensions);
         writeln("Matrix dimensions: ", matrixDimensions);
         writeln("Block size: ", blockSize);
+        
+        version (WithActualMatrix) version (PrintMatrix)
+        {
+            writeln("Entire matrix: ");
+            printAsMatrix(matrixData, matrixDimensions[1]);
+        }
     }
 
     // Ceiling. Includes the last block.
@@ -80,33 +104,36 @@ int main()
     int[NUM_DIMS] wholeBlockCountsPerProcess = matrixDimensions[] / (blockSize * computeGridDimensions[]);
     int[NUM_DIMS] blockIndicesOfLastProcess = blockCounts[] - wholeBlockCountsPerProcess[] * computeGridDimensions[] - 1;
 
+    int getWorkSizeAtDimension(size_t dimIndex, int coord)
+    {
+        int dimWorkSize = wholeBlockCountsPerProcess[dimIndex] * blockSize;
+
+        // Check if the last block is ours
+        // Say there are 10 blocks and 4 processes:
+        // [][][][][][][][][][]  ()()()()
+        // Every process gets 2 blocks each, 2 more blocks remain:
+        // [][] ()()()()
+        // So if we subtract 10 - 8 we get 2, 
+        // and the second process gets the last block.
+        // The other processes that are to the right of it essentially get one less block.
+        int index = blockIndicesOfLastProcess[dimIndex];
+        if (coord < index)
+        {
+            dimWorkSize += blockSize;
+        }
+        else if (coord == index)
+        {
+            dimWorkSize += lastBlockSizes[dimIndex];
+        }
+
+        return dimWorkSize;
+    }
+
     int getWorkSizeForProcessAt(int[NUM_DIMS] coords)
     {
         int workSize = 1;
-        foreach (dimIndex, wholeBlocksCount; wholeBlockCountsPerProcess)
-        {
-            int dimWorkSize = wholeBlocksCount * blockSize;
-
-            // Check if the last block is ours
-            // Say there are 10 blocks and 4 processes:
-            // [][][][][][][][][][]  ()()()()
-            // Every process gets 2 blocks each, 2 more blocks remain:
-            // [][] ()()()()
-            // So if we subtract 10 - 8 we get 2, 
-            // and the second process gets the last block.
-            // The other processes that are to the right of it essentially get one less block.
-            int index = blockIndicesOfLastProcess[dimIndex];
-            if (coords[dimIndex] < index)
-            {
-                dimWorkSize += blockSize;
-            }
-            else if (coords[dimIndex] == index)
-            {
-                dimWorkSize += lastBlockSizes[dimIndex];
-            }
-
-            workSize *= dimWorkSize;
-        }
+        foreach (dimIndex, coord; coords)
+            workSize *= getWorkSizeAtDimension(dimIndex, coord);
         return workSize;
     }
 
@@ -127,11 +154,11 @@ int main()
 
         size_t bufferIndex = 0;
         foreach (int rowIndex; iota(mycoords[0] * blockSize, matrixDimensions[0], computeGridDimensions[0] * blockSize))
-        foreach (int colIndex; iota(mycoords[1] * blockSize, matrixDimensions[1], computeGridDimensions[1] * blockSize))
         foreach (int actualRowIndex; rowIndex..min(rowIndex + blockSize, matrixDimensions[0]))
+        foreach (int colIndex; iota(mycoords[1] * blockSize, matrixDimensions[1], computeGridDimensions[1] * blockSize))
         {
             int colRecvSize = min(blockSize, matrixDimensions[1] - colIndex);
-            int linearIndexInMatrix = actualRowIndex * blockSize + colIndex;
+            int linearIndexInMatrix = actualRowIndex * matrixDimensions[1] + colIndex;
             matrixWindow.get(
                 buffer[bufferIndex .. bufferIndex += colRecvSize], 
                 linearIndexInMatrix, rootRankInComputeGrid);
@@ -184,6 +211,7 @@ int main()
                 mh.send(sendBuffer, destRank, tag, topologyComm);
             }
             // Prepare own share.
+            buffer = buffer[0..getWorkSizeForProcessAt(mycoords)];
             prepareBuffer(buffer, mycoords);
         }
         else
@@ -192,6 +220,13 @@ int main()
         }
     }
 
+    version (PrintMatrix)
+    {
+        import core.thread;
+        Thread.sleep(dur!"msecs"(20 * info.rank));
+        writeln("Process' ", mycoords, " matrix");
+        printAsMatrix(buffer, getWorkSizeAtDimension(1, mycoords[1]));
+    }
     
     // The random computation that each process has to do.
     static int crunch(int[] buf)
