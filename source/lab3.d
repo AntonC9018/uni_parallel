@@ -100,7 +100,7 @@ int main()
     // Ceiling. Includes the last block.
     int[NUM_DIMS] blockCounts = (matrixDimensions[] + blockSize - 1) / blockSize;
     // Last column or row may be incomplete
-    int[NUM_DIMS] lastBlockSizes = matrixDimensions[] % blockSize;
+    int[NUM_DIMS] lastBlockSizes = matrixDimensions[] - (blockCounts[] - 1) * blockSize;
     int[NUM_DIMS] wholeBlockCountsPerProcess = matrixDimensions[] / (blockSize * computeGridDimensions[]);
     int[NUM_DIMS] blockIndicesOfLastProcess = blockCounts[] - wholeBlockCountsPerProcess[] * computeGridDimensions[] - 1;
 
@@ -163,8 +163,7 @@ int main()
                 buffer[bufferIndex .. bufferIndex += colRecvSize], 
                 linearIndexInMatrix, rootRankInComputeGrid);
         }
-        assert(bufferIndex == buffer.length);
-
+        assert(bufferIndex == buffer.length, "Not enough items");
         matrixWindow.fence();
     }
     else // version (!WithActualMatrix)
