@@ -910,6 +910,22 @@ struct File(AccessMode mode)
         return result;
     }
     // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=697&zoom=180,44,499
+    void setView(){}
+
+    static if (mode & (AccessMode.WriteOnly | AccessMode.ReadWrite))
+    {
+        void writeAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status status = MPI_STATUS_IGNORE)
+        {
+            MPI_File_write_at(handle, offset, UnrollBuffer!buffer, status);
+        }
+    } 
+    static if (mode & (AccessMode.ReadOnly | AccessMode.ReadWrite))
+    {
+        void readAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status status = MPI_STATUS_IGNORE)
+        {
+            MPI_File_read_at(handle, offset, UnrollBuffer!buffer, status);
+        }
+    }
 }
 
 string getValidationStringForAccessMode(AccessMode mode)
