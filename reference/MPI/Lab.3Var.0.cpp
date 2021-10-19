@@ -15,7 +15,7 @@ int main(int argc, char **argv)
 	MPI_Aint rowsize;
 	MPI_Datatype etype, ftype0, ftype;
 	MPI_Status state;
-	MPI_Datatype MPI_ROW;
+	MPI_Datatype row_datatype;
 	int blengths[2] = {0, 1};
 	MPI_Datatype types[2];
 	MPI_Aint disps[2];
@@ -60,13 +60,13 @@ int main(int argc, char **argv)
 		amode = MPI_MODE_CREATE | MPI_MODE_WRONLY;
 		MPI_File_open(Comm_write, "array.dat", amode, MPI_INFO_NULL, &OUT);
 		// Array Program (derived datatypes)
-		MPI_Type_contiguous(l * m, MPI_INT, &MPI_ROW);
-		MPI_Type_commit(&MPI_ROW);
-		etype = MPI_ROW;
-		ftype0 = MPI_ROW;
-		types[0] = types[1] = MPI_ROW;
+		MPI_Type_contiguous(l * m, MPI_INT, &row_datatype);
+		MPI_Type_commit(&row_datatype);
+		etype = row_datatype;
+		ftype0 = row_datatype;
+		types[0] = types[1] = row_datatype;
 		disps[0] = (MPI_Aint)0;
-		MPI_Type_extent(MPI_ROW, &rowsize); //<==> l*m*sizeof(int)
+		MPI_Type_extent(row_datatype, &rowsize); //<==> l*m*sizeof(int)
 		if (rank_gr1 > 0)
 			disps[1] = rank_gr1 * rowsize;
 		MPI_Type_struct(2, blengths, disps, types, &ftype);
@@ -90,16 +90,16 @@ int main(int argc, char **argv)
 		if (rank_gr1 == 0)
 		{
 			MPI_File_set_view(OUT, 0, etype, ftype0, "native", MPI_INFO_NULL);
-			MPI_File_write(OUT, &value[0][0], 1, MPI_ROW, &state);
-			MPI_Get_count(&state, MPI_ROW, &count);
+			MPI_File_write(OUT, &value[0][0], 1, row_datatype, &state);
+			MPI_Get_count(&state, row_datatype, &count);
 			printf("Procesul %d din grupul 1 (%d din grupul parinte) a inscris in fisier %d etypes ( %d linii) \n", rank_gr1, rank, count, count * l);
 		}
 		else
 		//Procesele rank=1,2,...,(size/2)-1 inscriu in fisier urmatoarele l linii
 		{
 			MPI_File_set_view(OUT, 0, etype, ftype, "native", MPI_INFO_NULL);
-			MPI_File_write(OUT, &value[rank * l][0], 1, MPI_ROW, &state);
-			MPI_Get_count(&state, MPI_ROW, &count);
+			MPI_File_write(OUT, &value[rank * l][0], 1, row_datatype, &state);
+			MPI_Get_count(&state, row_datatype, &count);
 			printf("Procesul %d din grupul 1 (%d din grupul parinte) a inscris in fisier %d etypes ( %d linii) \n", rank_gr1, rank, count, count * l);
 		}
 	}
@@ -111,13 +111,13 @@ int main(int argc, char **argv)
 		amode = MPI_MODE_CREATE | MPI_MODE_RDWR;
 		MPI_File_open(Comm_read, "array.dat", amode, MPI_INFO_NULL, &OUT);
 		// Array Program (derived datatypes)
-		MPI_Type_contiguous(l * m, MPI_INT, &MPI_ROW);
-		MPI_Type_commit(&MPI_ROW);
-		etype = MPI_ROW;
-		ftype0 = MPI_ROW;
-		types[0] = types[1] = MPI_ROW;
+		MPI_Type_contiguous(l * m, MPI_INT, &row_datatype);
+		MPI_Type_commit(&row_datatype);
+		etype = row_datatype;
+		ftype0 = row_datatype;
+		types[0] = types[1] = row_datatype;
 		disps[0] = (MPI_Aint)0;
-		MPI_Type_extent(MPI_ROW, &rowsize); //<==> l*m*sizeof(int)
+		MPI_Type_extent(row_datatype, &rowsize); //<==> l*m*sizeof(int)
 		if (rank_gr2 > 0)
 			disps[1] = rank_gr2 * rowsize;
 		MPI_Type_struct(2, blengths, disps, types, &ftype);
@@ -125,7 +125,7 @@ int main(int argc, char **argv)
 		if (rank_gr2 == 0)
 		{
 			MPI_File_set_view(OUT, 0, etype, ftype0, "native", MPI_INFO_NULL);
-			MPI_File_read(OUT, &myval[0][0], 1, MPI_ROW, &state);
+			MPI_File_read(OUT, &myval[0][0], 1, row_datatype, &state);
 			printf("===Procesul %d din grupul 2 (%d din grupul parinte) a citit din fisier rindurile:\n", rank_gr2, rank);
 			for (int i = 0; i < l; i++)
 			{
@@ -139,7 +139,7 @@ int main(int argc, char **argv)
 		else
 		{
 			MPI_File_set_view(OUT, 0, etype, ftype, "native", MPI_INFO_NULL);
-			MPI_File_read(OUT, &myval[0][0], 1, MPI_ROW, &state);
+			MPI_File_read(OUT, &myval[0][0], 1, row_datatype, &state);
 			printf("===Procesul %d din grupul 2 (%d din grupul parinte) a citit din fisier rindurile:\n", rank_gr2, rank);
 			for (int i = 0; i < l; i++)
 			{

@@ -754,14 +754,15 @@ MPI_Comm createGraph(const(int)[] indices, const(int)[] edges, MPI_Comm baseComm
     return result;
 }
 
-private int* getWeightsPointer(const(int)[] weights)
-{
-    return weights.length == 0 ? (cast(int*) MPI_WEIGHTS_EMPTY) : (cast(int*) weights.ptr);
-}
-
 
 version (MPINotAncient)
 {
+    private int* getWeightsPointer(const(int)[] weights)
+    {
+        // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=438&zoom=180,65,231
+        return weights.length == 0 ? (cast(int*) MPI_WEIGHTS_EMPTY) : (cast(int*) weights.ptr);
+    }
+
     MPI_Comm createDistributedGraphFromAdjacencies(
         const(int)[] incomingEdges, const(int)[] incomingEdgeWeights,
         const(int)[] outgoingEdges, const(int)[] outgoingEdgeWeights,
@@ -769,7 +770,6 @@ version (MPINotAncient)
     {
         assert(incomingEdges.length == incomingEdgeWeights.length);
         assert(outgoingEdges.length == outgoingEdgeWeights.length);
-        // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=438&zoom=180,65,231
         MPI_Comm result;
         int reorderInt = cast(int) reorder;
         MPI_Dist_graph_create_adjacent(
@@ -852,3 +852,135 @@ OffsetRanksTuple getCartesianShift(MPI_Comm comm, int axisIndex, int offset)
 //     foreach (i; 1..indices.length)
 //         indices[i] = indices[i - 1] + edges[i].length;
 // }
+
+// https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=686&zoom=180,44,261
+enum AccessMode : int
+{
+    Create                  = 1,    // MPI_MODE_CREATE
+    ReadOnly                = 2,    // MPI_MODE_RDONLY
+    WriteOnly               = 4,    // MPI_MODE_WRONLY
+    ReadWrite               = 8,    // MPI_MODE_RDWR
+    DeleteOnClose           = 16,   // MPI_MODE_DELETE_ON_CLOSE
+    UniqueOpen              = 32,   // MPI_MODE_UNIQUE_OPEN
+    ErrorIfCreatingExistent = 64,   // MPI_MODE_EXCL
+    Append                  = 128,  // MPI_MODE_APPEND
+    SequentialAccessOnly    = 256,  // MPI_MODE_SEQUENTIAL
+}
+
+auto openFile(AccessMode mode)(const(char)* fileName, 
+    MPI_Comm comm = MPI_COMM_WORLD, MPI_Info info = MPI_INFO_NULL)
+{
+    File!mode result;
+    MPI_File_open(comm, cast(char*) fileName, mode, info, &(result.handle));
+    return result;
+}
+
+int closeFile(AccessMode mode)(File!mode* file)
+{
+    return MPI_File_close(&file.handle);
+}
+
+// int deleteFile(AccessMode mode, File!mode* file)
+// {
+//     return MPI_File_delete(
+// }
+
+struct File(AccessMode mode)
+{
+    enum validationString = getValidationStringForAccessMode(mode);
+    static assert(!validationString, validationString);
+    MPI_File handle;
+
+    void setSize(MPI_Offset size)
+    {
+        static assert(!(mode & AccessMode.SequentialAccessOnly));
+        MPI_File_set_size(handle, size);
+    }
+
+    void preallocate(MPI_Offset size)
+    {
+        static assert(!(mode & AccessMode.SequentialAccessOnly));
+        MPI_File_preallocate(handle, size);
+    }
+
+    MPI_Offset size()
+    {
+        MPI_Offset result;
+        MPI_File_get_size(handle, &result);
+        return result;
+    }
+    // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=697&zoom=180,44,499
+}
+
+string getValidationStringForAccessMode(AccessMode mode)
+{
+    import std.conv : to;
+    
+    // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=687&zoom=180,44,597
+    if (mode & AccessMode.ReadOnly)
+    {
+        if (mode & AccessMode.Create)
+            return "ReadOnly cannot be used in conjunction with Create";
+        if (mode & AccessMode.ErrorIfCreatingExistent)
+            return "ReadOnly cannot be used in conjunction with ErrorIfCreatingExistent";
+    }
+
+    bool areSet(AccessMode sourceFlags, AccessMode checkFlags) 
+    { 
+        return (sourceFlags & checkFlags) == checkFlags;
+    }
+
+    if (areSet(mode, AccessMode.ReadWrite | AccessMode.SequentialAccessOnly))
+        return "ReadWrite cannot be used in conjunction with SequentialAccessOnly";
+
+    AccessMode[] extractedFlags;
+    if (mode & AccessMode.ReadOnly)
+        extractedFlags ~= AccessMode.ReadOnly;
+    if (mode & AccessMode.WriteOnly)
+        extractedFlags ~= AccessMode.WriteOnly;
+    if (mode & AccessMode.ReadWrite)
+        extractedFlags ~= AccessMode.ReadWrite;
+    size_t foundCount = extractedFlags.length;
+    if (foundCount == 0)
+        return "You must specify exactly one of the following: ReadOnly, WriteOnly, ReadWrite";
+    if (foundCount > 1)
+    {
+        string result = "The following are mutually exclusive: ReadOnly, WriteOnly, ReadWrite. You have specified ";
+        result ~= to!string(foundCount);
+        result ~= " of them: ";
+
+        size_t commasLeft = foundCount - 1;
+        foreach (flag; extractedFlags)
+        {
+            result += to!string(flag);
+            if (commasLeft-- > 0)
+                result ~= ",";
+        }
+        return result;
+    }
+
+    return null;
+}
+
+
+// static string cannotBeUsedInConjunctionAreSet(string[] prohibitedFlagPairs)
+// {
+//     string result = `with(AccessMode) 
+//     { 
+//         auto combinedFlag = 0 `;
+//     foreach (flag; prohibitedFlagPairs)
+//         result ~= `|` ~ flag;
+//     result ~= `;
+//         if ((mode & combinedFlag) == combinedFlag)
+//             return "The flags `;
+//     foreach (index, flag; prohibitedFlagPairs)
+//     {
+//         result ~= flag;
+//         if (index != prohibitedFlagPairs.length)
+//             result ~= ", ";
+//     }
+//     result ~= ` cannot be used in conjunction;
+//     }`;
+//     return result;
+// }
+// mixin(cannotBeUsedInConjunctionAreSet([ "ReadOnly", "Create" ]));
