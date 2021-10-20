@@ -142,6 +142,10 @@ void createDatatype(T)() if (is(T == struct))
     MPI_Type_commit(&(Datatype!T));
 }
 
+// size_t getDatatypeSize(T)(T type)
+// {
+//      if (is(type
+
 template BufferInfo(alias buffer)
 {
     static if (is(typeof(buffer) : T[], T))
@@ -872,13 +876,11 @@ auto openFile(AccessMode mode)(const(char)* fileName,
 {
     File!mode result;
     MPI_File_open(comm, cast(char*) fileName, mode, info, &(result.handle));
+    assert(result.handle != MPI_FILE_NULL);
     return result;
 }
 
-int closeFile(AccessMode mode)(File!mode* file)
-{
-    return MPI_File_close(&file.handle);
-}
+
 
 // int deleteFile(AccessMode mode, File!mode* file)
 // {
@@ -909,24 +911,146 @@ struct File(AccessMode mode)
         MPI_File_get_size(handle, &result);
         return result;
     }
+
     // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=697&zoom=180,44,499
-    void setView(){}
+    int setViewRaw(ReceiveDatatype)(ReceiveDatatype receiveDatatype,
+        size_t displacementBytes, MPI_Info info = MPI_INFO_NULL)
+    {
+        // The symbol is either already aliased to MPI_Datatype, or has an alias this
+        // to a datatype. 
+        // TODO: this should probably not assume what this is and be more generic = a function call.
+        MPI_Datatype etype = MPI_BYTE;
+        MPI_Datatype ftype = receiveDatatype;
+        assert(etype != INVALID_DATATYPE, "Provided elementary type was invalid");
+        assert(ftype != INVALID_DATATYPE, "Provided target filetype was invalid");
+
+        return MPI_File_set_view(handle, displacementBytes, etype, ftype, cast(char*) "native", info);
+    }
 
     static if (mode & (AccessMode.WriteOnly | AccessMode.ReadWrite))
     {
-        void writeAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status status = MPI_STATUS_IGNORE)
+        void writeAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
         {
             MPI_File_write_at(handle, offset, UnrollBuffer!buffer, status);
+        }
+
+        void sync()
+        {
+            MPI_File_sync(handle);
+        }
+
+        void write(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
+        {
+            MPI_File_write(handle, UnrollBuffer!buffer, status);
         }
     } 
     static if (mode & (AccessMode.ReadOnly | AccessMode.ReadWrite))
     {
-        void readAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status status = MPI_STATUS_IGNORE)
+        void readAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
         {
             MPI_File_read_at(handle, offset, UnrollBuffer!buffer, status);
         }
+
+        void read(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
+        {
+            MPI_File_read(handle, UnrollBuffer!buffer, status);
+        }
+    }
+
+    int close()
+    {
+        return MPI_File_close(&handle);
     }
 }
+
+
+struct FileView(TFile : File!mode, TElementary, AccessMode mode) 
+{
+    TFile* file;
+
+    void preallocate(size_t length) { file.preallocate(TElementary.sizeof * length); }
+    void setSize(size_t length) { file.setSize(TElementary.sizeof * length); }
+
+    size_t length() { return file.size / TElementary.sizeof; }
+
+    /// Sets the given view.
+    int bind(ReceiveDatatype)(ReceiveDatatype receiveDatatype, 
+        size_t displacementIndex, MPI_Info info = MPI_INFO_NULL)
+    {
+        MPI_Datatype etype = getDatatypeId!TElementary();
+        MPI_Datatype ftype = receiveDatatype;
+        assert(ftype != INVALID_DATATYPE, "Provided target filetype was invalid");
+
+        return MPI_File_set_view(file.handle, displacementIndex * TElementary.sizeof, 
+            etype, ftype, cast(char*) "native", info);         
+    }
+
+     /// Sets the given view.
+    int bind(size_t displacementIndex, MPI_Info info = MPI_INFO_NULL)
+    {
+        MPI_Datatype etype = getDatatypeId!TElementary();
+        MPI_Datatype ftype = etype;
+        assert(ftype != INVALID_DATATYPE, "Provided target filetype was invalid");
+
+        return MPI_File_set_view(file.handle, cast(MPI_Offset) displacementIndex * TElementary.sizeof, 
+            etype, ftype, cast(char*) "native", info);         
+    }
+
+    static if (mode & (AccessMode.WriteOnly | AccessMode.ReadWrite))
+    {
+        void writeAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
+        {
+            assert(is(BufferInfo!buffer.ElementType == TElementary));
+            file.writeAt(buffer, offset, status);
+        }
+
+        void sync() { file.sync(); }
+
+        void write(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
+        {
+            assert(is(BufferInfo!buffer.ElementType == TElementary));
+            file.write(buffer, status);
+        }
+    }
+    static if (mode & (AccessMode.ReadOnly | AccessMode.ReadWrite))
+    {
+        void readAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
+        {
+            assert(is(BufferInfo!buffer.ElementType == TElementary));
+            file.readAt(buffer, offset, status);
+        }
+
+        void read(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
+        {
+            assert(is(BufferInfo!buffer.ElementType == TElementary));
+            file.read(buffer, status);
+        }
+    }
+}
+
+
+template createView(TElementary)
+{
+    auto createView(TFile)(ref TFile file)
+    {
+        return FileView!(TFile, TElementary)(&file);
+    }
+}
+
+// {
+//     auto createView(TElementary, TFile : File!mode, AccessMode mode)(ref TFile file)
+//     {
+//         return FileView!(TFile, TElementary)(file);
+//     }
+
+//     /// A nice helper
+//     auto createView(TElementary, TFile : File!mode, AccessMode mode)(ref TFile file, size_t displacementIndex)
+//     {
+//         auto result = FileView!(TFile, TElementary)(file);
+//         result.bind(Datatype!TElementary, displacementIndex);
+//         return result;
+//     }
+// }
 
 string getValidationStringForAccessMode(AccessMode mode)
 {
@@ -950,12 +1074,11 @@ string getValidationStringForAccessMode(AccessMode mode)
         return "ReadWrite cannot be used in conjunction with SequentialAccessOnly";
 
     AccessMode[] extractedFlags;
-    if (mode & AccessMode.ReadOnly)
-        extractedFlags ~= AccessMode.ReadOnly;
-    if (mode & AccessMode.WriteOnly)
-        extractedFlags ~= AccessMode.WriteOnly;
-    if (mode & AccessMode.ReadWrite)
-        extractedFlags ~= AccessMode.ReadWrite;
+    foreach (flag; [AccessMode.ReadOnly, AccessMode.WriteOnly, AccessMode.ReadWrite])
+    {
+        if (mode & flag)
+            extractedFlags ~= flag;
+    }
     size_t foundCount = extractedFlags.length;
     if (foundCount == 0)
         return "You must specify exactly one of the following: ReadOnly, WriteOnly, ReadWrite";
@@ -968,7 +1091,7 @@ string getValidationStringForAccessMode(AccessMode mode)
         size_t commasLeft = foundCount - 1;
         foreach (flag; extractedFlags)
         {
-            result += to!string(flag);
+            result ~= to!string(flag);
             if (commasLeft-- > 0)
                 result ~= ",";
         }
@@ -978,6 +1101,31 @@ string getValidationStringForAccessMode(AccessMode mode)
     return null;
 }
 
+struct DynamicArrayDatatype(ElementType)
+{
+    MPI_Datatype id;
+    // To accomodate simple usage
+    alias id this;
+    size_t elementCount;
+}
+
+auto createDynamicArrayDatatype(Buffer)(Buffer targetBuffer)
+    if (__traits(compiles, BufferInfo!targetBuffer))
+{
+    alias info = BufferInfo!targetBuffer;
+    return createDynamicArrayDatatype!(info.ElementType)(cast(int) info.length);
+}
+
+auto createDynamicArrayDatatype(ElementType)(int elementCount)
+    // TODO: this is probably innacurate
+    if (IsValidDatatype!ElementType)
+{
+    DynamicArrayDatatype!ElementType result;
+    result.elementCount = elementCount;
+    MPI_Type_contiguous(elementCount, getDatatypeId!ElementType, &result.id);
+    MPI_Type_commit(&result.id);
+    return result;
+}
 
 // static string cannotBeUsedInConjunctionAreSet(string[] prohibitedFlagPairs)
 // {
