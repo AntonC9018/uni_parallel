@@ -3,10 +3,15 @@ module mpihelper;
 import mpi;
 import core.runtime : Runtime, CArgs;
 
+// // Disable trapping. MPI does not play well with those.
+// extern(C) __gshared string[] rt_options = [ "trapExceptions=0" ];
+
 struct GroupInfo
 {
     int size;
     int rank;
+
+    bool belongs() { return rank != MPI_UNDEFINED; }
 }
 
 struct InitInfo

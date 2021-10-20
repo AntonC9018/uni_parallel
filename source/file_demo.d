@@ -7,7 +7,7 @@ void main()
     auto info = mh.initialize();
     scope(exit) mh.finalize();
 
-    enum flags = mh.AccessMode.ReadWrite | mh.AccessMode.Create;
+    enum flags = mh.AccessMode.ReadWrite | mh.AccessMode.Create | mh.AccessMode.DeleteOnClose;
     auto file = mh.openFile!(flags)("array1.dat");
     scope(exit) file.close();
 
@@ -18,9 +18,8 @@ void main()
         file.preallocate(int.sizeof * info.size);
         file.setView!int(MPI_INT, info.rank);
         
-        // Initially, the buffer is filled with this process' rank
-        int[3] buf = info.rank;
-        file.write(&buf[info.rank]);
+        int[] buf = new int[](info.size);
+        file.write(&info.rank);
         writeln("Process ", info.rank, " wrote ", info.rank);
         file.sync();
         
@@ -37,14 +36,16 @@ void main()
     static if (1)
     {
         // Create a typesafe wrapper over file containing ints.
-        auto intView = file.createView!int();
+        auto intView = mh.createView!int(file);
         // auto intView = file.createView!int();
         
-        // Offset it
+        // Offset it.
+        // Each process writes to the index, corresponding to its rank.
         intView.bind(info.rank);
+
         // It will work only on ints
-        int[3] buf = info.rank;
-        intView.write(&buf[info.rank]);
+        int[] buf = new int[](info.size);
+        intView.write(&info.rank);
         intView.sync();
 
         // Read the entire buffer.
