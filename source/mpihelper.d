@@ -1,23 +1,29 @@
 module mpihelper;
 
 import mpi;
-import core.runtime : Runtime, CArgs;
 
 // // Disable trapping. MPI does not play well with those.
 // extern(C) __gshared string[] rt_options = [ "trapExceptions=0" ];
 
 struct GroupInfo
 {
+    /// The number of processes in the group
     int size;
+    /// The rank of the current process within the group
     int rank;
 
+    /// Checks if the currect process is part of this group
     bool belongs() { return rank != MPI_UNDEFINED; }
 }
 
+import core.runtime : Runtime, CArgs;
+
 struct InitInfo
 {
+    /// Represents the properties of the COMM_WORLD group
     GroupInfo groupInfo;
     alias groupInfo this;
+
     CArgs args;
 }
 
@@ -61,7 +67,6 @@ void barrier(MPI_Comm comm = MPI_COMM_WORLD) { MPI_Barrier(comm); }
 enum MPI_Datatype INVALID_DATATYPE = null;
 
 // TODO: a more complete list of these
-
 enum Pair;
 
 @Pair struct IntInt
@@ -76,7 +81,6 @@ enum Pair;
     int rank;
 }
 
-// We cannot 
 template Datatype(T)
 {
     static if (is(T == int))
@@ -543,6 +547,7 @@ private template UnrollMemoryAccess(alias buffer, alias startIndex, alias target
     alias UnrollMemoryAccess = AliasSeq!(UnrollBuffer!buffer, targetRank, offset, bufferInfo.length, bufferInfo.datatype);
 }
 
+/// A wrapper for an RMA window, useful for calling RMA routines
 struct MemoryWindow(T)
 {
     MPI_Win handle;
@@ -637,9 +642,10 @@ struct MemoryWindow(T)
     }
 }
 
-auto createMemoryWindow(T)(T value, MPI_Info info = MPI_INFO_NULL, MPI_Comm comm = MPI_COMM_WORLD)
+/// Create a wrapper for an RMA window, backed by a buffer
+auto createMemoryWindow(Buffer)(Buffer buffer, MPI_Info info = MPI_INFO_NULL, MPI_Comm comm = MPI_COMM_WORLD)
 {
-    alias bufferInfo = BufferInfo!value;
+    alias bufferInfo = BufferInfo!buffer;
     MemoryWindow!(bufferInfo.ElementType) window = void;
     MPI_Win_create(
         bufferInfo.ptr, bufferInfo.ElementType.sizeof * bufferInfo.length, 1, 
@@ -647,6 +653,9 @@ auto createMemoryWindow(T)(T value, MPI_Info info = MPI_INFO_NULL, MPI_Comm comm
     return window;
 }
 
+/// Create a wrapper for an RMA window, which is not backed up by a buffer.
+/// This means other processes will not be able to read from this process' memory.
+/// Typically used for reading other process' memory.
 auto acquireMemoryWindow(ElementType)(MPI_Info info = MPI_INFO_NULL, MPI_Comm comm = MPI_COMM_WORLD)
 {
     MemoryWindow!ElementType result = void;
@@ -990,7 +999,7 @@ struct FileView(TFile : File!mode, TElementary, AccessMode mode)
             etype, ftype, cast(char*) "native", info);         
     }
 
-     /// Sets the given view.
+     /// ditto
     int bind(size_t displacementIndex, MPI_Info info = MPI_INFO_NULL)
     {
         MPI_Datatype etype = getDatatypeId!TElementary();
