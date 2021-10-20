@@ -111,10 +111,11 @@ auto getDatatypeId(T)()
     return Datatype!T;
 }
 
-void createDatatype(T : TElement[N], TElement, size_t N)()
+auto createDatatype(T : TElement[N], TElement, size_t N)()
 {
     MPI_Type_contiguous(cast(int) N, Datatype!TElement, &(Datatype!T));
     MPI_Type_commit(&(Datatype!T));
+    return Datatype!T;
 }
 
 void createDatatype(T)() if (is(T == struct))
@@ -996,10 +997,10 @@ struct FileView(TFile : File!mode, TElementary, AccessMode mode)
         assert(ftype != INVALID_DATATYPE, "Provided target filetype was invalid");
 
         return MPI_File_set_view(file.handle, displacementIndex * TElementary.sizeof, 
-            etype, ftype, cast(char*) "native", info);         
+            etype, ftype, cast(char*) "native", info);
     }
 
-     /// ditto
+    /// ditto
     int bind(size_t displacementIndex, MPI_Info info = MPI_INFO_NULL)
     {
         MPI_Datatype etype = getDatatypeId!TElementary();
@@ -1140,6 +1141,27 @@ auto createDynamicArrayDatatype(ElementType)(int elementCount)
     MPI_Type_commit(&result.id);
     return result;
 }
+
+// auto createDynamicArrayDatatype(TDatatype : DynamicArrayDatatype!ElementType, ElementType)
+//     (TDatatype datatype, int elementCount)
+//     if (IsValidDatatype!ElementType)
+// {
+//     DynamicArrayDatatype!ElementType result;
+//     result.elementCount = elementCount;
+//     MPI_Type_contiguous(elementCount, datatype.id, &result.id);
+//     MPI_Type_commit(&result.id);
+//     return result;
+// }
+
+auto startDynamicDatatype(ElementType)()
+{
+    return DynamicArrayDatatype!ElementType();
+}
+
+// ref auto contiguousSection(T : DynamicArrayDatatype!ElementType, ElementType)(ref return T datatype)
+// {
+//     MPI_Type_conti
+// } 
 
 // static string cannotBeUsedInConjunctionAreSet(string[] prohibitedFlagPairs)
 // {
