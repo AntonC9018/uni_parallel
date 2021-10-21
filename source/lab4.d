@@ -6,7 +6,7 @@ void main()
     import mh = mpihelper;
     import std.stdio : writeln;
     import std.random : uniform;
-    import std.algorithm : fold;
+    import std.algorithm : fold, max;
     import std.range : iota, array;
     import core.thread;
     
@@ -81,6 +81,15 @@ void main()
     auto layoutInfo = mh.getCyclicLayoutInfo(matrixDimensions, computeGridDimensions, blockSize);
     int[2] blockStrides = blockSize * computeGridDimensions[];
 
+    foreach (dimIndex, numWholeBlocks; layoutInfo.wholeBlockCountsPerProcess)
+    {
+        import std.format;
+        mh.abortIf(numWholeBlocks == 0, 
+            "Please select a higher dimension %s of the matrix. 
+            The program does not support the case when there is not at least 1 whole block per each process."
+                .format(dimIndex == 0 ? "Y" : "X"));
+    }
+
     // All blocks but the last.
     auto wholeBlocksDatatype = mh.createVectorDatatype!int(
         blockSize, layoutInfo.wholeBlockCountsPerProcess[1], blockStrides[1]);
@@ -123,6 +132,7 @@ void main()
 
     auto view = mh.createView!int(file);
     view.preallocate(matrixDimensions[0] * matrixDimensions[1]);
+
     view.bind(myWholeTableType, viewOffset);
     int[] buffer = new int[](myWholeTableType.elementCount);
 
@@ -159,7 +169,12 @@ void main()
             view.read(bufferAll[]);
             mh.printAsMatrix(bufferAll, matrixDimensions[1]);
         }
+        
+        int maxElement = buffer.fold!max(int.min);
+        mh.intraReduce(&maxElement, MPI_MAX, readGroupInfo.rank, 0, topologyComm);
+        if (readGroupInfo.rank == 0)
+            writeln("Overall max element is ", maxElement);
     }
-
     mh.barrier();
+
 }

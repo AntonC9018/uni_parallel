@@ -1,6 +1,6 @@
 # Lucrarea de laborator nr.3 la Programarea Paralelă și Distribuită
 
-Tema: **Divizarea și distribuirea matricelor pe grille de procese utilizând algoritmul 2D-ciclic.**
+Tema: **Divizarea și distribuirea matricelor pe grile de procese utilizând algoritmul 2D-ciclic.**
 
 A realizat: **Curmanschii Anton, IA1901**
 
