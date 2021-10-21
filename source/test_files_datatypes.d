@@ -98,10 +98,11 @@ void main()
     auto lastBlockDatatype = mh.createDynamicArrayDatatype!int(lastBlockSize[0]);
     auto myRowType = mh.createStructDatatype(
         [wholeBlockDatatype, lastBlockDatatype], 
-        [mycoords[1] * blockSize, wholeBlockDatatype.extent + mycoords[1] * blockSize]);
+        [mycoords[1] * blockSize, wholeBlockDatatype.diameter + mycoords[1] * blockSize]);
     auto wholeRowsDatatype = mh.createVectorDatatype(myRowType, blockSize, blockCounts[1], blockStrides[1]);
     auto myWholeTableType = mh.createStructDatatype(
-        [wholeRowsDatatype, myRowType], [0, wholeRowsDatatype.extent]);
+        [wholeRowsDatatype, myRowType], 
+        [0, wholeRowsDatatype.diameter]);
     
     auto view = mh.createView!int(file);
     view.bind(myWholeTableType, 0);

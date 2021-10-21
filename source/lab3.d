@@ -11,7 +11,6 @@ int main()
     scope(exit) mh.finalize();
 
     enum NUM_DIMS = 2;
-
     int[NUM_DIMS] computeGridDimensions = 0; 
     version (SimpleTest)
     {
@@ -37,26 +36,8 @@ int main()
     }
     else
     {
-        enum minDimension = 10;
-        enum maxDimension = 40;
-        if (info.rank == 0)
-            matrixDimensions[0] = uniform!uint % (maxDimension - minDimension * 2) + minDimension;
-        mh.bcast(&(matrixDimensions[0]), 0);
-        matrixDimensions[1] = maxDimension - matrixDimensions[0];
-    }
-
-    version (PrintMatrix)
-    {
-        void printAsMatrix(int[] data, int width)
-        {
-            import std.stdio : writef;
-            foreach (rowStartIndex; iota(0, data.length, width))
-            {
-                foreach (i; 0..width)
-                    writef("%3d", data[rowStartIndex + i]);
-                writeln();
-            }
-        }
+        matrixDimensions[0] = mh.bcastUniform!uint(10, 30);
+        matrixDimensions[1] = 40 - matrixDimensions[0];
     }
 
     version (WithActualMatrix)
@@ -72,17 +53,9 @@ int main()
 
     int blockSize;
     version (SimpleTest)
-    {
         blockSize = 2;
-    }
     else
-    {
-        enum minBlockSize = 2;
-        enum maxBlockSize = 6;
-        if (info.rank == 0)
-            blockSize = uniform!uint % (maxBlockSize - minBlockSize) + minBlockSize;
-        mh.bcast(&blockSize, 0);
-    }
+        blockSize = mh.bcastUniform!uint(2, 4);
     
     if (info.rank == 0)
     {
@@ -93,54 +66,16 @@ int main()
         version (WithActualMatrix) version (PrintMatrix)
         {
             writeln("Entire matrix: ");
-            printAsMatrix(matrixData, matrixDimensions[1]);
+            mh.printAsMatrix(matrixData, matrixDimensions[1]);
         }
     }
 
-    // Ceiling. Includes the last block.
-    int[NUM_DIMS] blockCounts = (matrixDimensions[] + blockSize - 1) / blockSize;
-    // Last column or row may be incomplete
-    int[NUM_DIMS] lastBlockSizes = matrixDimensions[] - (blockCounts[] - 1) * blockSize;
-    int[NUM_DIMS] wholeBlockCountsPerProcess = matrixDimensions[] / (blockSize * computeGridDimensions[]);
-    int[NUM_DIMS] blockIndicesOfLastProcess = blockCounts[] - wholeBlockCountsPerProcess[] * computeGridDimensions[] - 1;
-
-    int getWorkSizeAtDimension(size_t dimIndex, int coord)
-    {
-        int dimWorkSize = wholeBlockCountsPerProcess[dimIndex] * blockSize;
-
-        // Check if the last block is ours
-        // Say there are 10 blocks and 4 processes:
-        // [][][][][][][][][][]  ()()()()
-        // Every process gets 2 blocks each, 2 more blocks remain:
-        // [][] ()()()()
-        // So if we subtract 10 - 8 we get 2, 
-        // and the second process gets the last block.
-        // The other processes that are to the right of it essentially get one less block.
-        int index = blockIndicesOfLastProcess[dimIndex];
-        if (coord < index)
-        {
-            dimWorkSize += blockSize;
-        }
-        else if (coord == index)
-        {
-            dimWorkSize += lastBlockSizes[dimIndex];
-        }
-
-        return dimWorkSize;
-    }
-
-    int getWorkSizeForProcessAt(int[NUM_DIMS] coords)
-    {
-        int workSize = 1;
-        foreach (dimIndex, coord; coords)
-            workSize *= getWorkSizeAtDimension(dimIndex, coord);
-        return workSize;
-    }
-
+    auto workDistributionInfo = mh.getCyclicLayoutInfo!NUM_DIMS(
+            matrixDimensions, computeGridDimensions, blockSize);
 
     version (WithActualMatrix)
     {
-        int[] buffer = new int[](getWorkSizeForProcessAt(mycoords));
+        int[] buffer = new int[](workDistributionInfo.getWorkSizeForProcessAt(mycoords));
 
         // Let's make use of RMA, because it's neat.
         mh.MemoryWindow!int matrixWindow;
@@ -151,7 +86,6 @@ int main()
             matrixWindow = mh.acquireMemoryWindow!int(MPI_INFO_NULL, topologyComm);
 
         matrixWindow.fence();
-
         size_t bufferIndex = 0;
         foreach (int rowIndex; iota(mycoords[0] * blockSize, matrixDimensions[0], computeGridDimensions[0] * blockSize))
         foreach (int actualRowIndex; rowIndex..min(rowIndex + blockSize, matrixDimensions[0]))
@@ -174,7 +108,7 @@ int main()
         int[NUM_DIMS] targetProcessCoords = mycoords;
         if (myComputeRank == rootRankInComputeGrid) 
             targetProcessCoords = 0;
-        int[] buffer = new int[](getWorkSizeForProcessAt(targetProcessCoords));
+        int[] buffer = new int[](workDistributionInfo.getWorkSizeForProcessAt(targetProcessCoords));
         
         // We will send the buffers individually to each process.
         const tag = 10;
@@ -205,12 +139,12 @@ int main()
                     continue;
                 int[NUM_DIMS] coords;
                 mh.getCartesianCoordinates(topologyComm, destRank, coords[]);
-                int[] sendBuffer = buffer[0..getWorkSizeForProcessAt(coords)];
+                int[] sendBuffer = buffer[0..workDistributionInfo.getWorkSizeForProcessAt(coords)];
                 prepareBuffer(sendBuffer, coords);
                 mh.send(sendBuffer, destRank, tag, topologyComm);
             }
             // Prepare own share.
-            buffer = buffer[0..getWorkSizeForProcessAt(mycoords)];
+            buffer = buffer[0..workDistributionInfo.getWorkSizeForProcessAt(mycoords)];
             prepareBuffer(buffer, mycoords);
         }
         else
@@ -224,7 +158,7 @@ int main()
         import core.thread;
         Thread.sleep(dur!"msecs"(20 * info.rank));
         writeln("Process' ", mycoords, " matrix");
-        printAsMatrix(buffer, getWorkSizeAtDimension(1, mycoords[1]));
+        mh.printAsMatrix(buffer, workDistributionInfo.getWorkSizeAtDimension(1, mycoords[1]));
     }
     
     // The random computation that each process has to do.

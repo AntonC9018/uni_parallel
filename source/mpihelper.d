@@ -85,6 +85,8 @@ template Datatype(T)
 {
     static if (is(T == int))
         alias Datatype = MPI_INT;
+    else static if (is(T == uint))
+        alias Datatype = MPI_UNSIGNED;
     else static if (is(T == float))
         alias Datatype = MPI_FLOAT;
     else static if (is(T == double))
@@ -97,11 +99,11 @@ template Datatype(T)
     {
         __gshared MPI_Datatype Datatype = INVALID_DATATYPE;
     }
-    else static assert(0);
+    else static assert(0, "Invalid datatype: "~T.stringof);
 }
 
 enum IsCustomDatatype(T) = is(T : TElement[N], TElement, size_t N) || is(T == struct);
-enum IsValidDatatype(T) = is(T : int) || is(T : double) 
+enum IsValidDatatype(T) = is(T : int) || is(T : double) || is(T == uint) 
     || is(T == IntInt) || is(T == DoubleInt) || IsCustomDatatype!T;
 
 // Must have a getter to allow AliasSeq to work.
@@ -726,9 +728,14 @@ MPI_Group createGroupExclude(MPI_Group baseGroup, int[] excludedRanks)
     return result;
 }
 
-void freeGroup(MPI_Group group)
+void free(MPI_Group* group)
 {
-    MPI_Group_free(&group);
+    MPI_Group_free(group);
+}
+
+void free(MPI_Comm* comm)
+{
+    MPI_Comm_free(comm);
 }
 
 MPI_Comm createComm(MPI_Comm baseComm, MPI_Group baseGroup)
@@ -886,16 +893,100 @@ enum AccessMode : int
     SequentialAccessOnly    = 256,  // MPI_MODE_SEQUENTIAL
 }
 
-auto openFile(AccessMode mode)(const(char)* fileName, 
+File!accessMode openFile(AccessMode accessMode)(const(char)* fileName, 
     MPI_Comm comm = MPI_COMM_WORLD, MPI_Info info = MPI_INFO_NULL)
 {
-    File!mode result;
-    MPI_File_open(comm, cast(char*) fileName, mode, info, &(result.handle));
+    File!accessMode result;
+    MPI_File_open(comm, cast(char*) fileName, accessMode, info, &(result.handle));
+    assert(result.handle != MPI_FILE_NULL);
+    return result;
+}
+
+GenericFile openFile(AccessMode accessMode, const(char)* fileName, 
+    MPI_Comm comm = MPI_COMM_WORLD, MPI_Info info = MPI_INFO_NULL)
+{
+    GenericFile result;
+    MPI_File_open(comm, cast(char*) fileName, accessMode, info, &(result.handle));
     assert(result.handle != MPI_FILE_NULL);
     return result;
 }
 
 
+// https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=697&zoom=180,44,499
+int setViewRaw(File, ReceiveDatatype)(ref File file, ReceiveDatatype receiveDatatype,
+    size_t displacementBytes, MPI_Info info = MPI_INFO_NULL)
+{
+    // The symbol is either already aliased to MPI_Datatype, or has an alias this
+    // to a datatype. 
+    // TODO: this should probably not assume what this is and be more generic = a function call.
+    MPI_Datatype etype = MPI_BYTE;
+    MPI_Datatype ftype = receiveDatatype;
+    assert(etype != INVALID_DATATYPE, "Provided elementary type was invalid");
+    assert(ftype != INVALID_DATATYPE, "Provided target filetype was invalid");
+
+    return MPI_File_set_view(file.handle, displacementBytes, etype, ftype, cast(char*) "native", info);
+}
+
+private mixin template BasicFile()
+{
+    MPI_File handle;
+
+    void sync()
+    {
+        MPI_File_sync(handle);
+    }
+
+    int close()
+    {
+        return MPI_File_close(&handle);
+    }
+}
+
+private mixin template WriteFile()
+{
+    void writeAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
+    {
+        MPI_File_write_at(handle, offset, UnrollBuffer!buffer, status);
+    }
+
+    void write(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
+    {
+        MPI_File_write(handle, UnrollBuffer!buffer, status);
+    }
+}
+
+private mixin template ReadFile()
+{
+    void readAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
+    {
+        MPI_File_read_at(handle, offset, UnrollBuffer!buffer, status);
+    }
+
+    void read(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
+    {
+        MPI_File_read(handle, UnrollBuffer!buffer, status);
+    }
+}
+
+private mixin template NonSequentialFile()
+{
+    void setSize(MPI_Offset size)
+    {
+        MPI_File_set_size(handle, size);
+    }
+
+    void preallocate(MPI_Offset size)
+    {
+        MPI_File_preallocate(handle, size);
+    }
+
+    MPI_Offset size()
+    {
+        MPI_Offset result;
+        MPI_File_get_size(handle, &result);
+        return result;
+    }
+}
 
 // int deleteFile(AccessMode mode, File!mode* file)
 // {
@@ -906,87 +997,66 @@ struct File(AccessMode mode)
 {
     enum validationString = getValidationStringForAccessMode(mode);
     static assert(!validationString, validationString);
-    MPI_File handle;
 
-    void setSize(MPI_Offset size)
-    {
-        static assert(!(mode & AccessMode.SequentialAccessOnly));
-        MPI_File_set_size(handle, size);
-    }
-
-    void preallocate(MPI_Offset size)
-    {
-        static assert(!(mode & AccessMode.SequentialAccessOnly));
-        MPI_File_preallocate(handle, size);
-    }
-
-    MPI_Offset size()
-    {
-        MPI_Offset result;
-        MPI_File_get_size(handle, &result);
-        return result;
-    }
-
-    // https://www.mpi-forum.org/docs/mpi-4.0/mpi40-report.pdf#page=697&zoom=180,44,499
-    int setViewRaw(ReceiveDatatype)(ReceiveDatatype receiveDatatype,
-        size_t displacementBytes, MPI_Info info = MPI_INFO_NULL)
-    {
-        // The symbol is either already aliased to MPI_Datatype, or has an alias this
-        // to a datatype. 
-        // TODO: this should probably not assume what this is and be more generic = a function call.
-        MPI_Datatype etype = MPI_BYTE;
-        MPI_Datatype ftype = receiveDatatype;
-        assert(etype != INVALID_DATATYPE, "Provided elementary type was invalid");
-        assert(ftype != INVALID_DATATYPE, "Provided target filetype was invalid");
-
-        return MPI_File_set_view(handle, displacementBytes, etype, ftype, cast(char*) "native", info);
-    }
-
+    mixin BasicFile!();
+    static if(!(mode & AccessMode.SequentialAccessOnly))
+        mixin NonSequentialFile!();
     static if (mode & (AccessMode.WriteOnly | AccessMode.ReadWrite))
-    {
-        void writeAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
-        {
-            MPI_File_write_at(handle, offset, UnrollBuffer!buffer, status);
-        }
-
-        void sync()
-        {
-            MPI_File_sync(handle);
-        }
-
-        void write(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
-        {
-            MPI_File_write(handle, UnrollBuffer!buffer, status);
-        }
-    } 
+        mixin WriteFile!();
     static if (mode & (AccessMode.ReadOnly | AccessMode.ReadWrite))
-    {
-        void readAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
-        {
-            MPI_File_read_at(handle, offset, UnrollBuffer!buffer, status);
-        }
+        mixin ReadFile!();
+}
 
-        void read(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
-        {
-            MPI_File_read(handle, UnrollBuffer!buffer, status);
-        }
+struct GenericFile
+{
+    mixin BasicFile!();
+    mixin NonSequentialFile!();
+    mixin WriteFile!();    
+    mixin ReadFile!();    
+}
+
+private mixin template WriteFileView()
+{
+    void writeAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
+    {
+        static assert(is(BufferInfo!buffer.ElementType == TElementary));
+        file.writeAt(buffer, offset, status);
     }
 
-    int close()
+    void write(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
     {
-        return MPI_File_close(&handle);
+        static assert(is(BufferInfo!buffer.ElementType == TElementary));
+        file.write(buffer, status);
     }
 }
 
-
-struct FileView(TFile : File!mode, TElementary, AccessMode mode) 
+private mixin template ReadFileView()
 {
-    TFile* file;
+    void readAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
+    {
+        static assert(is(BufferInfo!buffer.ElementType == TElementary));
+        file.readAt(buffer, offset, status);
+    }
 
+    void read(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
+    {
+        assert(is(BufferInfo!buffer.ElementType == TElementary));
+        file.read(buffer, status);
+    }
+}
+
+private mixin template NonSequentialFileView()
+{
     void preallocate(size_t length) { file.preallocate(TElementary.sizeof * length); }
     void setSize(size_t length) { file.setSize(TElementary.sizeof * length); }
-
     size_t length() { return file.size / TElementary.sizeof; }
+}
+
+
+
+struct FileView(TFile, TElementary) 
+{
+    TFile* file;
 
     /// Sets the given view.
     int bind(ReceiveDatatype)(ReceiveDatatype receiveDatatype, 
@@ -1011,35 +1081,23 @@ struct FileView(TFile : File!mode, TElementary, AccessMode mode)
             etype, ftype, cast(char*) "native", info);         
     }
 
-    static if (mode & (AccessMode.WriteOnly | AccessMode.ReadWrite))
+    void sync() { file.sync(); }
+
+    static if(is(TFile == GenericFile))
     {
-        void writeAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
-        {
-            assert(is(BufferInfo!buffer.ElementType == TElementary));
-            file.writeAt(buffer, offset, status);
-        }
-
-        void sync() { file.sync(); }
-
-        void write(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
-        {
-            assert(is(BufferInfo!buffer.ElementType == TElementary));
-            file.write(buffer, status);
-        }
+        mixin WriteFileView!();
+        mixin ReadFileView!();
+        mixin NonSequentialFileView!();
     }
-    static if (mode & (AccessMode.ReadOnly | AccessMode.ReadWrite))
-    {
-        void readAt(Buffer)(Buffer buffer, MPI_Offset offset, MPI_Status* status = MPI_STATUS_IGNORE)
-        {
-            assert(is(BufferInfo!buffer.ElementType == TElementary));
-            file.readAt(buffer, offset, status);
-        }
 
-        void read(Buffer)(Buffer buffer, MPI_Status* status = MPI_STATUS_IGNORE)
-        {
-            assert(is(BufferInfo!buffer.ElementType == TElementary));
-            file.read(buffer, status);
-        }
+    else static if (is(TFile : File!mode, AccessMode mode))
+    {
+        static if (!(mode & AccessMode.SequentialAccessOnly))
+            mixin NonSequentialFileView!();
+        static if (mode & (AccessMode.WriteOnly | AccessMode.ReadWrite))
+            mixin WriteFileView!();
+        static if (mode & (AccessMode.ReadOnly | AccessMode.ReadWrite))
+            mixin ReadFileView!();
     }
 }
 
@@ -1116,12 +1174,20 @@ string getValidationStringForAccessMode(AccessMode mode)
     return null;
 }
 
-struct DynamicArrayDatatype(ElementType)
+struct DynamicDatatype
 {
     MPI_Datatype id;
-    // To accomodate simple usage
     alias id this;
-    size_t elementCount;
+    int elementCount;
+
+    /// Represents extent + lower bound.
+    size_t diameter;
+}
+
+struct TypedDynamicDatatype(_ElementType)
+{
+    DynamicDatatype info;
+    alias info this;
 }
 
 auto createDynamicArrayDatatype(Buffer)(Buffer targetBuffer)
@@ -1131,56 +1197,256 @@ auto createDynamicArrayDatatype(Buffer)(Buffer targetBuffer)
     return createDynamicArrayDatatype!(info.ElementType)(cast(int) info.length);
 }
 
-auto createDynamicArrayDatatype(ElementType)(int elementCount)
-    // TODO: this is probably innacurate
-    if (IsValidDatatype!ElementType)
+TDatatype createDynamicArrayDatatype(TDatatype : DynamicDatatype)
+    (TDatatype datatype, int elementCount)
+    // if (is(TDatatype : DynamicDatatype))
 {
-    DynamicArrayDatatype!ElementType result;
-    result.elementCount = elementCount;
-    MPI_Type_contiguous(elementCount, getDatatypeId!ElementType, &result.id);
-    MPI_Type_commit(&result.id);
+    TDatatype result;
+    result.elementCount = elementCount * datatype.elementCount;
+    result.diameter = elementCount * datatype.diameter;
+
+    MPI_Type_contiguous(cast(int) elementCount, datatype.id, &(result.id));
+    MPI_Type_commit(&(result.id));
     return result;
 }
 
-// auto createDynamicArrayDatatype(TDatatype : DynamicArrayDatatype!ElementType, ElementType)
-//     (TDatatype datatype, int elementCount)
-//     if (IsValidDatatype!ElementType)
-// {
-//     DynamicArrayDatatype!ElementType result;
-//     result.elementCount = elementCount;
-//     MPI_Type_contiguous(elementCount, datatype.id, &result.id);
-//     MPI_Type_commit(&result.id);
-//     return result;
-// }
-
-auto startDynamicDatatype(ElementType)()
+TypedDynamicDatatype!ElementType createDynamicArrayDatatype(ElementType)(int elementCount)
+    if (IsValidDatatype!ElementType)
 {
-    return DynamicArrayDatatype!ElementType();
+
+    TypedDynamicDatatype!ElementType result;
+    result.elementCount = elementCount;
+    result.diameter = elementCount;
+    
+    MPI_Type_contiguous(cast(int) elementCount, getDatatypeId!ElementType, &(result.id));
+    MPI_Type_commit(&(result.id));
+    return result;
 }
 
-// ref auto contiguousSection(T : DynamicArrayDatatype!ElementType, ElementType)(ref return T datatype)
-// {
-//     MPI_Type_conti
-// } 
+TypedDynamicDatatype!ElementType createVectorDatatype(ElementType)(
+    int blockLength, int blockCount, int stride)
+    if (IsValidDatatype!ElementType)
+{
+    
+    TypedDynamicDatatype!ElementType result;
+    result.elementCount = blockLength * blockCount;
+    result.diameter = stride * blockCount;
 
-// static string cannotBeUsedInConjunctionAreSet(string[] prohibitedFlagPairs)
+    MPI_Type_vector(
+        cast(int) blockCount, cast(int) blockLength, cast(int) stride, 
+        getDatatypeId!ElementType, &(result.id));
+    MPI_Type_commit(&(result.id));
+    return result;
+}
+
+
+TDatatype createVectorDatatype(TDatatype : DynamicDatatype)(TDatatype datatype, 
+    int blockLength, int blockCount, int stride)
+{
+    TDatatype result;
+    result.elementCount = datatype.elementCount * blockLength * blockCount;
+    result.diameter = datatype.diameter * stride * blockCount - datatype.diameter * blockLength;
+
+    MPI_Type_vector(
+        cast(int) blockCount, cast(int) blockLength, cast(int) stride, 
+        datatype.id, &(result.id));
+    MPI_Type_commit(&(result.id));
+
+    return result;
+}
+
+// TDatatype createVectorDatatype(ElementType)(
+//     int blockLength, int blockCount, int stride)
 // {
-//     string result = `with(AccessMode) 
-//     { 
-//         auto combinedFlag = 0 `;
-//     foreach (flag; prohibitedFlagPairs)
-//         result ~= `|` ~ flag;
-//     result ~= `;
-//         if ((mode & combinedFlag) == combinedFlag)
-//             return "The flags `;
-//     foreach (index, flag; prohibitedFlagPairs)
-//     {
-//         result ~= flag;
-//         if (index != prohibitedFlagPairs.length)
-//             result ~= ", ";
-//     }
-//     result ~= ` cannot be used in conjunction;
-//     }`;
+//     static assert(IsValidDatatype!ElementType);
+    
+//     TypedDynamicDatatype!ElementType result;
+//     result.elementCount = blockLength * blockCount;
+//     result.diameter = stride * blockCount;
+
+//     MPI_Type_vector(
+//         cast(int) blockCount, cast(int) blockLength, cast(int) stride, 
+//         getDatatypeId!ElementType, &(result.id));
+//     MPI_Type_commit(&(result.id));
 //     return result;
 // }
-// mixin(cannotBeUsedInConjunctionAreSet([ "ReadOnly", "Create" ]));
+
+
+TDatatype resizeDatatype(TDatatype : TypedDynamicDatatype!ElementType, ElementType)(
+    TDatatype datatype, size_t desiredDiameter)
+{
+    TDatatype result;
+    result.diameter = desiredDiameter;
+    result.elementCount = datatype.elementCount;
+
+    MPI_Aint extent, lb;
+    MPI_Type_get_extent(datatype.id, &lb, &extent);
+    
+    MPI_Aint resultLb = lb;
+    MPI_Aint resultExtent = (desiredDiameter * ElementType.sizeof) - lb;
+
+    MPI_Type_create_resized(datatype.id, resultLb, resultExtent, &(result.id));
+    return result;
+}
+
+// auto createStructDatatype(TDatatypeArray : TDatatype[N], TDatatype, size_t N)(
+//     auto ref const TDatatypeArray datatypes, 
+//     auto ref const MPI_Aint[N] displacements,
+//     auto ref const int[N] blockLengths = 1)
+// {
+//     TDatatype result;
+//     import std.algorithm, std.range;
+//     result.elementCount = datatypes
+//         .map!`a.elementCount`
+//         .zip(blockLengths)
+//         .fold!((accum, elementCount, count) => accum * elementCount * count)(1)
+//         .staticArray;
+    
+//     MPI_Datatype[N] datatypeIds = datatypes.map!`a.id`.staticArray;
+    
+//     MPI_Type_create_struct(cast(int) N, 
+//         blockLengths.ptr, displacements.ptr, datatypeIds.ptr, &(result.id));
+//     MPI_Type_commit(&(result.id));
+
+//     MPI_Aint lb;
+//     MPI_Type_get_diameter(result.id, &lb, &(result.diameter));
+//     result.diameter += lb;
+
+//     return result;
+// }
+
+auto createStructDatatype(TDatatype)(
+    TDatatype*[] datatypes, 
+    MPI_Aint[] displacements, 
+    int[] blockLengths)
+{
+    TDatatype result;
+    import std.algorithm, std.range;
+    result.elementCount = datatypes
+        .zip(blockLengths)
+        .fold!((a, tup) => a + tup[0].elementCount * tup[1])(0);
+    
+    /// TODO: make it nogc (kind of annoying in this old version of the compiler).
+    MPI_Datatype[] datatypeIds = datatypes.map!`a.id`.array;
+
+    {static if (is(TDatatype : TypedDynamicDatatype!ElementType, ElementType))
+    {
+        displacements[] *= ElementType.sizeof;
+    }}
+    
+    MPI_Type_create_struct(cast(int) blockLengths.length, 
+        blockLengths.ptr, displacements.ptr, datatypeIds.ptr, &(result.id));
+    MPI_Type_commit(&(result.id));
+
+    MPI_Aint lb;
+    MPI_Type_get_extent(result.id, &lb, cast(MPI_Aint*) &(result.diameter));
+    result.diameter += lb;
+
+    {static if (is(TDatatype : TypedDynamicDatatype!ElementType, ElementType))
+    {
+        result.diameter /= ElementType.sizeof;
+    }}
+
+    return result;
+}
+
+/// Generates a random number and broadcasts it to all processes.
+T bcastUniform(T)(T lowerBound, T upperBound, MPI_Comm comm = MPI_COMM_WORLD)
+{
+    T num;
+    int myrank;
+    MPI_Comm_rank(comm, &myrank);
+    if (myrank == 0)
+    {
+        import std.random : uniform;
+        num = uniform!T % (upperBound - lowerBound) + lowerBound;
+    }
+    bcast(&num, 0, comm);
+    return num;
+}
+
+
+
+struct CyclicWorkLayoutInfo(size_t NUM_DIMS)
+{
+    int[NUM_DIMS] lastBlockSizes;
+    int[NUM_DIMS] wholeBlockCountsPerProcess;
+    int[NUM_DIMS] blockIndicesOfLastProcess;
+    int blockSize;
+
+    int getLastBlockSizeAtDimension(size_t dimIndex, int coord)
+    {
+        // Check if the last block is ours
+        // Say there are 10 blocks and 4 processes:
+        // [][][][][][][][][][]  ()()()()
+        // Every process gets 2 blocks each, 2 more blocks remain:
+        // [][] ()()()()
+        // So if we subtract 10 - 8 we get 2, 
+        // and the second process gets the last block.
+        // The other processes that are to the right of it essentially get one less block.
+        int index = blockIndicesOfLastProcess[dimIndex];
+        if (coord < index)
+        {
+            return blockSize;
+        }
+        if (coord == index)
+        {
+            return lastBlockSizes[dimIndex];
+        }
+        return 0;
+    }
+
+    int getWorkSizeAtDimension(size_t dimIndex, int coord)
+    {
+        int dimWorkSize = wholeBlockCountsPerProcess[dimIndex] * blockSize;
+        return getLastBlockSizeAtDimension(dimIndex, coord) + dimWorkSize;
+    }
+
+    int getWorkSizeForProcessAt(int[NUM_DIMS] coords)
+    {
+        int workSize = 1;
+        foreach (dimIndex, coord; coords)
+            workSize *= getWorkSizeAtDimension(dimIndex, coord);
+        return workSize;
+    }
+}
+
+/// Returns the data layout description of an N-dimensional matrix of the given `matrixDimensions` size,
+/// per `computeGridDimensions` processes, each process getting `blockSize` blocks.
+/// The algorithm is called "cyclic block distribution".
+/// Refer to e.g. the link below (I did not study by that link, the implementation is trivial as it stands):
+/// https://link.springer.com/content/pdf/10.1007%2F3-540-61626-8_20.pdf
+auto getCyclicLayoutInfo(TArray : int[N], size_t N)(
+    TArray matrixDimensions, TArray computeGridDimensions, int blockSize)
+{
+    CyclicWorkLayoutInfo!N result;
+    // Ceiling. Includes the last block.
+    int[N] blockCounts = (matrixDimensions[] + blockSize - 1) / blockSize;
+    // Last column or row may be incomplete
+    result.lastBlockSizes[]             = matrixDimensions[] - (blockCounts[] - 1) * blockSize;
+    result.wholeBlockCountsPerProcess[] = matrixDimensions[] / (blockSize * computeGridDimensions[]);
+    result.blockIndicesOfLastProcess[]  = blockCounts[] - result.wholeBlockCountsPerProcess[] * computeGridDimensions[] - 1;
+    result.blockSize = blockSize;
+    return result;
+}
+
+void printAsMatrix(int[] data, int width)
+{
+    import std.stdio : writef, writeln;
+    import std.range : iota;
+    
+    foreach (rowStartIndex; iota(0, data.length, width))
+    {
+        foreach (i; 0..width)
+            writef("%3d", data[rowStartIndex + i]);
+        writeln();
+    }
+}
+    
+// struct WriteCommInfo
+// {
+//     MPI_Group groupHandle;
+//     MPI_Comm commHandle;
+//     mh.GroupInfo groupInfo;
+//     alias info this;
+// }
