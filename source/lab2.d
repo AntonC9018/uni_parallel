@@ -1,4 +1,5 @@
-
+/// A demo program, which makes use of virtual topology to walk across
+/// the vertices of a side of a cube.
 int main()
 {
     import mpi;

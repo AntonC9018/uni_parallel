@@ -1,3 +1,20 @@
+/**
+    A demo program, illustrating the 2d cyclic data distibution algorithm.
+
+    Version flags           Description
+    ==============================================================================
+    `SimpleTest`            Sets the matrix dimensions to (9, 9), compute grid dimensions to (2, 3)
+                            and the block size to 2.
+
+    `WithActualMatrix`      Without this flag, the whole matrix is not created in memory
+                            and thus cannot be printed to the console.
+                            The data is transmitted using RMA functions with this flag set.
+
+    `PrintMatrix`
+
+    default                 The data is transmitted using sends and receives.
+*/
+
 int main()
 {
     import mpi;
@@ -70,8 +87,8 @@ int main()
         }
     }
 
-    auto workDistributionInfo = mh.getCyclicLayoutInfo!NUM_DIMS(
-            matrixDimensions, computeGridDimensions, blockSize);
+    auto workDistributionInfo = mh.getCyclicLayoutInfo(
+        matrixDimensions, computeGridDimensions, blockSize);
 
     version (WithActualMatrix)
     {

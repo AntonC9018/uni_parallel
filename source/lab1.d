@@ -1,3 +1,19 @@
+/**
+    A demo program, implementing Nash Equilibrium solution finder.
+
+    Optional version flags      Constraints
+    =======================================================================
+    `ArbitraryMatrix`           When compiling with this flag, also compile the file `matrix.d`.
+    
+    `RootDistributesValues`     ArbitraryMatrix flag is ignored. 
+                                Only square matrices are allowed. 
+                                The immutable data matrices are used. 
+
+    `KeyboardInput`             ArbitraryMatrix flag is ignored. Any matrices, but don't use large ones.
+
+    default                     The immutable data matrices are used.
+*/
+
 // DATA processed by the processes
 enum DataWidth = 6;
 immutable AData = [
@@ -316,8 +332,8 @@ int main()
     {
         foreach (colIndex, ref pair; reduceBufferA)
         {
-            pair.value = AData[colIndex + rank * DataWidth];
-            pair.rank = rank;
+            pair.value = AData[colIndex + info.rank * DataWidth];
+            pair.rank = info.rank;
         }
     }
 
@@ -364,8 +380,8 @@ int main()
         // Initialize buffer for B
         foreach (rowIndex, ref pair; reduceBufferB)
         {
-            pair.value = BData[rowIndex * DataWidth + rank];
-            pair.rank = rank;
+            pair.value = BData[rowIndex * DataWidth + info.rank];
+            pair.rank = info.rank;
         }
     }
     mh.intraReduce(reduceBufferB, MPI_MAXLOC, info.rank, root);

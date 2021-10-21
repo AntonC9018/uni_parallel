@@ -1,3 +1,5 @@
+/// Same idea as in lab3, but using groups of processes, MPI datatypes and IO API's.
+/// `SimpleTest` version flag sets the values to ones easy to interpret (see lab3)
 void main()
 {
     import mpi;
@@ -14,20 +16,7 @@ void main()
     // Make sure there's an even number of processes.
     mh.abortIf(info.size & 1, "The number of processes must be even.");
 
-    // Split the processes in 2 groups.
-    MPI_Group worldGroup  = mh.getGroup();
-    int[] writeGroupRanks = iota(info.size / 2).array;
-
-    auto writeGroup     = mh.createGroupInclude(worldGroup, writeGroupRanks);
-    auto writeComm      = mh.createComm(MPI_COMM_WORLD, writeGroup);
-    auto writeGroupInfo = mh.getGroupInfo(writeGroup);
-    scope(exit) mh.free(&writeGroup);
-
-    auto readGroup      = mh.createGroupExclude(worldGroup, writeGroupRanks);
-    auto readComm       = mh.createComm(MPI_COMM_WORLD, readGroup);
-    auto readGroupInfo  = mh.getGroupInfo(readGroup);
-    scope(exit) mh.free(&readGroup);
-
+    // Initialize variables
     int[2] matrixDimensions;
     matrixDimensions[0] = mh.bcastUniform!uint(10, 30);
     matrixDimensions[1] = 40 - matrixDimensions[0];
@@ -51,6 +40,20 @@ void main()
         writeln("ComputeGridDimensions: ", computeGridDimensions);
         writeln("BlockSize: ", blockSize);
     }
+
+    // Split the processes in 2 groups.
+    MPI_Group worldGroup  = mh.getGroup();
+    int[] writeGroupRanks = iota(info.size / 2).array;
+
+    auto writeGroup     = mh.createGroupInclude(worldGroup, writeGroupRanks);
+    auto writeComm      = mh.createComm(MPI_COMM_WORLD, writeGroup);
+    auto writeGroupInfo = mh.getGroupInfo(writeGroup);
+    scope(exit) mh.free(&writeGroup);
+
+    auto readGroup      = mh.createGroupExclude(worldGroup, writeGroupRanks);
+    auto readComm       = mh.createComm(MPI_COMM_WORLD, readGroup);
+    auto readGroupInfo  = mh.getGroupInfo(readGroup);
+    scope(exit) mh.free(&readGroup);
     
     // Create the active topology. Write for writes, read for reads.
     int[2] repeats = 0;
@@ -146,16 +149,16 @@ void main()
         view.sync();
         view.read(buffer[]);
         showMatrix();
-    }
-    
-    view.bind(0);
-    if (readGroupInfo.rank == 0)
-    {
-        Thread.sleep(dur!"msecs"(20 * readGroupInfo.size));
-        writeln("Entire matrix: ");
-        int[] bufferAll = new int[](matrixDimensions[].fold!`a * b`(1));
-        view.read(bufferAll[]);
-        mh.printAsMatrix(bufferAll, matrixDimensions[1]);
+
+        view.bind(0);
+        if (readGroupInfo.rank == 0)
+        {
+            Thread.sleep(dur!"msecs"(20 * readGroupInfo.size));
+            writeln("Entire matrix: ");
+            int[] bufferAll = new int[](matrixDimensions[].fold!`a * b`(1));
+            view.read(bufferAll[]);
+            mh.printAsMatrix(bufferAll, matrixDimensions[1]);
+        }
     }
 
     mh.barrier();
