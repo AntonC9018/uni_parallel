@@ -90,8 +90,6 @@ void main()
                 .format(dimIndex == 0 ? "Y" : "X"));
     }
 
-    mh.TypedDynamicDatatype!int result;
-
     // All blocks but the last.
     auto myRowType = mh.createVectorDatatype!int(
         blockSize, layoutInfo.wholeBlockCountsPerProcess[1], blockStrides[1]);
