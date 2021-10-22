@@ -104,8 +104,7 @@ void main()
         // Concatenation of the two.
         myRowType = mh.createStructDatatype(
             [&wholeBlocksDatatype, &lastBlockDatatype],
-            [0, blockStrides[1] * layoutInfo.wholeBlockCountsPerProcess[1]], 
-            [1, 1]);
+            [0, blockStrides[1] * layoutInfo.wholeBlockCountsPerProcess[1]]);
     }
     myRowType = mh.resizeDatatype(myRowType, matrixDimensions[1]);
 
@@ -123,8 +122,7 @@ void main()
         // Concatenate the rows into a table.
         myWholeTableType = mh.createStructDatatype(
             [&wholeRowsDatatype, &lastRowsDatatype],
-            [0, layoutInfo.wholeBlockCountsPerProcess[0] * blockStrides[0] * matrixDimensions[1]], 
-            [1, 1]);
+            [0, layoutInfo.wholeBlockCountsPerProcess[0] * blockStrides[0] * matrixDimensions[1]]);
     }
     
     auto viewOffset = mycoords[0] * blockSize * myRowType.diameter + mycoords[1] * blockSize;

@@ -1315,19 +1315,30 @@ TDatatype resizeDatatype(TDatatype : TypedDynamicDatatype!ElementType, ElementTy
 //     return result;
 // }
 
-auto createStructDatatype(TDatatype)(
-    TDatatype*[] datatypes, 
-    MPI_Aint[] displacements, 
-    int[] blockLengths)
+
+auto createStructDatatype(TDatatype, size_t N)(
+    TDatatype*[N] datatypes, 
+    MPI_Aint[N] displacements)
+{
+    int[N] blockLengths = 1;
+    return createStructDatatype(datatypes, displacements, blockLengths);
+}
+
+
+auto createStructDatatype(TDatatype, size_t N)(
+    TDatatype*[N] datatypes, 
+    MPI_Aint[N] displacements, 
+    int[N] blockLengths)
 {
     TDatatype result;
     import std.algorithm, std.range;
-    result.elementCount = datatypes
-        .zip(blockLengths)
+    result.elementCount = datatypes[]
+        .zip(blockLengths[])
         .fold!((a, tup) => a + tup[0].elementCount * tup[1])(0);
     
-    /// TODO: make it nogc (kind of annoying in this old version of the compiler).
-    MPI_Datatype[] datatypeIds = datatypes.map!`a.id`.array;
+    MPI_Datatype[N] datatypeIds = void;
+    foreach (i; 0..N) 
+        datatypeIds[i] = datatypes[i].id;
 
     {static if (is(TDatatype : TypedDynamicDatatype!ElementType, ElementType))
     {
