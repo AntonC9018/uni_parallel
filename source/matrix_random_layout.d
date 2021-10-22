@@ -32,10 +32,10 @@ import std.range : iota;
 import std.algorithm;
 
 /// Splits a matrix (a `dimensions[0]` by `dimensions[1]` area) into `numBuckets` submatrices.
-/// The submatrices are distributed in `numSlots` slots in such a way that every slot would
-/// be assigned an approximately equal amount of buckets (load balancing).
+/// The submatrices are distributed in `numSlots` slots in such a way that every slot is
+/// assigned an approximately equal amount of work size (load balancing).
 /// I think it is less stable (balances the load less) but more random when passed 
-/// `SplitLargestFirst` = true.
+/// the template argument `SplitLargestFirst` = true.
 /// It may fail when passed too big a bucket count, but it's highly unlikely.
 RandomWorkLayout getRandomWorkLayout(bool SplitLargestFirst = false)(
     int[2] dimensions, size_t numSlots, size_t numBuckets)
