@@ -4,13 +4,13 @@ struct Bucket
 {
     int[2] coords;
     int[2] dimensions;
-    Bucket* nextBucket;
+    int nextBucketIndex;
 }
 
 struct Slot
 {
-    Bucket* firstBucket;
-    int totalArea;
+    int firstBucketIndex = -1;
+    int totalArea = 0;
 
     int opCmp(const Slot other) const
     {
@@ -32,10 +32,10 @@ DistributionResult getRandomWorkLayout(int[2] dimensions, size_t numSlots, size_
 {
     Bucket[] bucketAllocator = new Bucket[](numBuckets);
     size_t nextBucketIndex = 0;
-    bucketAllocator[nextBucketIndex++] = Bucket([0, 0], dimensions, null);
+    bucketAllocator[nextBucketIndex++] = Bucket([0, 0], dimensions, -1);
 
     Slot[] slots = new Slot[](numSlots);
-    slots[0] = Slot(&bucketAllocator[0], dimensions.fold!`a * b`(1));
+    slots[0] = Slot(0, dimensions.fold!`a * b`(1));
 
     while (nextBucketIndex < bucketAllocator.length)
     {
@@ -46,39 +46,41 @@ DistributionResult getRandomWorkLayout(int[2] dimensions, size_t numSlots, size_
         uint randomSize = uniform!uint;
         uint randomDimensionIndex = uniform!uint % 2;
 
-        Bucket* currentBucket = slots[maxIndex].firstBucket;
+        int currentBucketIndex = slots[maxIndex].firstBucketIndex;
         int smallestAreaDifference = int.max;
-        Bucket* smallestAreaDifferenceBucket = null;
+        int smallestAreaDifferenceBucketIndex = -1;
 
         bool changedDirection = false;
 
-        while (currentBucket)
+        while (currentBucketIndex != -1)
         {
+            Bucket* bucket = &bucketAllocator[currentBucketIndex];
+
             void endIteration()
             {
-                currentBucket = currentBucket.nextBucket;
+                currentBucketIndex = bucket.nextBucketIndex;
 
-                if (!currentBucket && !smallestAreaDifferenceBucket)
+                if (currentBucketIndex == -1 && smallestAreaDifferenceBucketIndex == -1)
                 {
-                    assert(currentBucket.dimensions[randomDimensionIndex] == 1);
+                    assert(bucket.dimensions[randomDimensionIndex] == 1);
                     assert(!changedDirection);
                     changedDirection = true;
 
                     randomDimensionIndex = 1 - randomDimensionIndex;
-                    currentBucket = slots[maxIndex].firstBucket;
+                    currentBucketIndex = slots[maxIndex].firstBucketIndex;
                 }
             }
 
             // Cannot split any more
-            if (currentBucket.dimensions[randomDimensionIndex] == 1)
+            if (bucket.dimensions[randomDimensionIndex] == 1)
             {
                 endIteration();
                 continue;
             }
 
-            const sideLength = randomSize % (currentBucket.dimensions[randomDimensionIndex] - 1) + 1;
-            int areaChange = currentBucket.dimensions[1 - randomDimensionIndex] * sideLength;
-            
+            const sideLength = randomSize % (bucket.dimensions[randomDimensionIndex] - 1) + 1;
+            int areaChange = bucket.dimensions[1 - randomDimensionIndex] * sideLength;
+
             const updatedAreaMax = slots[maxIndex].totalArea - areaChange;
             const updatedAreaMin = slots[minIndex].totalArea + areaChange;
             import std.math : abs;
@@ -86,18 +88,19 @@ DistributionResult getRandomWorkLayout(int[2] dimensions, size_t numSlots, size_
             if (areaDifference < smallestAreaDifference)
             {
                 smallestAreaDifference = areaDifference;
-                smallestAreaDifferenceBucket = currentBucket;
+                smallestAreaDifferenceBucketIndex = currentBucketIndex;
             }
 
             endIteration();
         }
 
-        assert(smallestAreaDifferenceBucket);
-        assert(smallestAreaDifferenceBucket < &bucketAllocator[$ - 1]);
+        assert(smallestAreaDifferenceBucketIndex != -1);
+        assert(smallestAreaDifferenceBucketIndex < nextBucketIndex);
+        Bucket* smallestDifferenceBucket = &bucketAllocator[smallestAreaDifferenceBucketIndex];
 
-        const newBucketLength = randomSize % (smallestAreaDifferenceBucket.dimensions[randomDimensionIndex] - 1) + 1;
+        const newBucketLength = randomSize % (smallestDifferenceBucket.dimensions[randomDimensionIndex] - 1) + 1;
         assert(newBucketLength >= 1);
-        const areaChange = smallestAreaDifferenceBucket.dimensions[1 - randomDimensionIndex] * newBucketLength;
+        const areaChange = smallestDifferenceBucket.dimensions[1 - randomDimensionIndex] * newBucketLength;
         assert(areaChange > 0);
 
         slots[maxIndex].totalArea -= areaChange;
@@ -105,14 +108,14 @@ DistributionResult getRandomWorkLayout(int[2] dimensions, size_t numSlots, size_
         slots[minIndex].totalArea += areaChange;
         assert(slots[minIndex].totalArea > 0);
 
-        Bucket* newBucket = &bucketAllocator[nextBucketIndex++];
-        *newBucket = *smallestAreaDifferenceBucket;
-        newBucket.coords[randomDimensionIndex] += smallestAreaDifferenceBucket.dimensions[randomDimensionIndex] - newBucketLength;
+        Bucket newBucket = *smallestDifferenceBucket;
+        newBucket.coords[randomDimensionIndex] += smallestDifferenceBucket.dimensions[randomDimensionIndex] - newBucketLength;
         newBucket.dimensions[randomDimensionIndex] = newBucketLength;
-        newBucket.nextBucket = slots[minIndex].firstBucket;
-        slots[minIndex].firstBucket = newBucket;
+        newBucket.nextBucketIndex = slots[minIndex].firstBucketIndex;
+        slots[minIndex].firstBucketIndex = cast(int) nextBucketIndex;
+        bucketAllocator[nextBucketIndex++] = newBucket;
 
-        smallestAreaDifferenceBucket.dimensions[randomDimensionIndex] -= newBucketLength;
+        smallestDifferenceBucket.dimensions[randomDimensionIndex] -= newBucketLength;
     }
 
     return DistributionResult(bucketAllocator, slots);
@@ -126,17 +129,18 @@ unittest
     int[64] buffer = -1;
     foreach (slotIndex, slot; layout.slots)
     {
-        const(Bucket)* bucket = slot.firstBucket;
-        while (bucket)
+        int bucketIndex = slot.firstBucketIndex;
+        while (bucketIndex != -1)
         {
+            const(Bucket)* bucket = &layout.buckets[bucketIndex];
             foreach (rowIndex; iota(bucket.dimensions[0]).map!(y => y + bucket.coords[0]))
             foreach (colIndex; iota(bucket.dimensions[1]).map!(x => x + bucket.coords[1]))
             {
-                size_t index = rowIndex * dimensions[1] + colIndex;
+                int index = rowIndex * dimensions[1] + colIndex;
                 assert(buffer[index] == -1);
                 buffer[index] = cast(int) slotIndex;
             }
-            bucket = bucket.nextBucket;
+            bucketIndex = bucket.nextBucketIndex;
         }
     }
     static void printAsMatrix(int[] data, int width)
