@@ -77,71 +77,172 @@ void main()
     auto file = mh.openFile(accessMode, "array.dat", topologyComm);
     scope(exit) file.close();
 
-    // Create the datatype used for interpreting the file
-    auto layoutInfo = mh.getCyclicLayoutInfo(matrixDimensions, computeGridDimensions, blockSize);
-    int[2] blockStrides = blockSize * computeGridDimensions[];
-
-    foreach (dimIndex, numWholeBlocks; layoutInfo.wholeBlockCountsPerProcess)
+    version (CyclicInitialization)
     {
-        import std.format;
-        mh.abortIf(numWholeBlocks == 0, 
-            "Please select a higher dimension %s of the matrix. 
-            The program does not support the case when there is not at least 1 whole block per each process."
-                .format(dimIndex == 0 ? "Y" : "X"));
-    }
+        // Create the datatype used for interpreting the file
+        auto layoutInfo = mh.getCyclicLayoutInfo(matrixDimensions, computeGridDimensions, blockSize);
+        int[2] blockStrides = blockSize * computeGridDimensions[];
 
-    // All blocks but the last.
-    auto myRowType = mh.createVectorDatatype!int(
-        blockSize, layoutInfo.wholeBlockCountsPerProcess[1], blockStrides[1]);
-    
-    // Variable size, because it may not fit completely into the matrix.
-    auto lastBlockSize1 = layoutInfo.getLastBlockSizeAtDimension(1, mycoords[1]);
-    if (lastBlockSize1 > 0)
+        foreach (dimIndex, numWholeBlocks; layoutInfo.wholeBlockCountsPerProcess)
+        {
+            import std.format;
+            mh.abortIf(numWholeBlocks == 0, 
+                "Please select a higher dimension %s of the matrix. 
+                The program does not support the case when there is not at least 1 whole block per each process."
+                    .format(dimIndex == 0 ? "Y" : "X"));
+        }
+
+        // All blocks but the last.
+        auto wholeBlocksDatatype = mh.createVectorDatatype!int(
+            blockSize, layoutInfo.wholeBlockCountsPerProcess[1], blockStrides[1]);
+        auto myRowType = wholeBlocksDatatype;
+        
+        // Variable size, because it may not fit completely into the matrix.
+        auto lastBlockSize1 = layoutInfo.getLastBlockSizeAtDimension(1, mycoords[1]);
+        if (lastBlockSize1 > 0)
+        {
+            auto lastBlockDatatype = mh.createDynamicArrayDatatype!int(lastBlockSize1);
+            // Concatenation of the two.
+            myRowType = mh.createStructDatatype(
+                [&wholeBlocksDatatype, &lastBlockDatatype],
+                [0, blockStrides[1] * layoutInfo.wholeBlockCountsPerProcess[1]]);
+        }
+        myRowType = mh.resizeDatatype(myRowType, matrixDimensions[1]);
+
+        // All rows but the last.
+        auto wholeRowsDatatype = mh.createVectorDatatype(
+            myRowType, blockSize, layoutInfo.wholeBlockCountsPerProcess[0], blockStrides[0]);
+        auto myWholeTableType = wholeRowsDatatype;
+
+        auto lastBlockSize0 = layoutInfo.getLastBlockSizeAtDimension(0, mycoords[0]);
+        if (lastBlockSize0 > 0)
+        {
+            // The last rows may be incomplete.
+            auto lastRowsDatatype = mh.createDynamicArrayDatatype(myRowType, lastBlockSize0);
+
+            // Concatenate the rows into a table.
+            myWholeTableType = mh.createStructDatatype(
+                [&wholeRowsDatatype, &lastRowsDatatype],
+                [0, layoutInfo.wholeBlockCountsPerProcess[0] * blockStrides[0] * matrixDimensions[1]]);
+        }
+        
+        auto viewOffset = mycoords[0] * blockSize * myRowType.diameter + mycoords[1] * blockSize;
+        mh.abortIf(myWholeTableType.elementCount != layoutInfo.getWorkSizeForProcessAt(mycoords), "Algorithm is wrong!");
+    }
+    else
     {
-        auto lastBlockDatatype = mh.createDynamicArrayDatatype!int(lastBlockSize1);
-        // Concatenation of the two.
-        myRowType = mh.createStructDatatype(
-            [&wholeBlocksDatatype, &lastBlockDatatype],
-            [0, blockStrides[1] * layoutInfo.wholeBlockCountsPerProcess[1]]);
+        // Share the randomly generated layout with all processes.
+        import matrix_random_layout;
+        RandomWorkLayout layout;
+        const numSlots = activeGroupInfo.size;
+        const averageNumberOfSubmatricesPerProcess = 4; 
+        const numBuckets = numSlots * averageNumberOfSubmatricesPerProcess;
+        mh.createDatatype!Bucket();
+        mh.createDatatype!Slot();
+        if (info.rank == 0)
+        {
+            layout = getRandomWorkLayout(matrixDimensions, numSlots, numBuckets);
+        }
+        else
+        {
+            layout.buckets = new Bucket[](numBuckets);
+            layout.slots = new Slot[](numSlots);
+        }
+        mh.bcast(layout.buckets, 0);
+        mh.bcast(layout.slots, 0);
+
+        int mySlotIndex = activeGroupInfo.rank;
+        MPI_Datatype[] datatypeIds;
+        MPI_Aint[] offsets;
+        int[] blockLengths;
+
+        mh.TypedDynamicDatatype!int myWholeTableType;
+        myWholeTableType.diameter = matrixDimensions.fold!`a * b`(1);
+
+        int currentBucketIndex = layout.slots[mySlotIndex].firstBucketIndex;
+        while (currentBucketIndex != -1)
+        {
+            const(Bucket)* bucket = &layout.buckets[currentBucketIndex];
+            auto dt = mh.createDynamicArrayDatatype!int(bucket.dimensions[1]);
+
+            myWholeTableType.elementCount += dt.elementCount * bucket.dimensions[0];
+
+            foreach (rowOffset; 0..bucket.dimensions[0])
+            {
+                datatypeIds ~= dt.id;
+                offsets ~= cast(MPI_Aint) (((rowOffset + bucket.coords[0]) * matrixDimensions[1] + bucket.coords[1]) * int.sizeof);
+                blockLengths ~= 1;
+            }
+
+            currentBucketIndex = bucket.nextBucketIndex;
+        }
+
+        // NOTE: 
+        // Apparently, the arrays must be sorted.
+        // Also, no overlapping gaps are allowed.
+        // So if two vectors overlap, it won't work correcty (it segfaults).
+        // Apparently, the gaps from the vectors override the actual data within other vectors,
+        // so it segfaults, because the write buffer is too long.
+        size_t[] sortedIndices = iota(offsets.length).array;
+        import std.algorithm : sort, map;
+        sortedIndices.sort!((a, b) => offsets[a] < offsets[b]);
+        offsets     = iota(offsets.length).map!(index => offsets[sortedIndices[index]]).array;
+        datatypeIds = iota(datatypeIds.length).map!(index => datatypeIds[sortedIndices[index]]).array;
+        
+
+        myWholeTableType.id = mh.createStructDatatype(datatypeIds, offsets, blockLengths);
+        {MPI_Aint lb, extent;
+        MPI_Type_get_extent(myWholeTableType.id, &lb, &extent);
+        writeln("Process ", activeGroupInfo.rank, " extent: ", extent/4, ", lb: ", lb/4, " Element count: ", myWholeTableType.elementCount);}
+
+        int viewOffset = 0;
+
+        void printMask()
+        {
+            writeln("Process mask:");
+            int[] maskBuffer = new int[](matrixDimensions[].fold!`a * b`(1));
+            foreach (slotIndex, slot; layout.slots)
+            {
+                int bucketIndex = slot.firstBucketIndex;
+                while (bucketIndex != -1)
+                {
+                    const(Bucket)* bucket = &layout.buckets[bucketIndex];
+                    foreach (rowIndex; 0..bucket.dimensions[0])
+                    foreach (colIndex; 0..bucket.dimensions[1])
+                    {
+                        int index = (rowIndex + bucket.coords[0]) * matrixDimensions[1] + colIndex + bucket.coords[1];
+                        maskBuffer[index] = cast(int) slotIndex;
+                    }
+                    bucketIndex = bucket.nextBucketIndex;
+                }
+            }
+            mh.printAsMatrix(maskBuffer, matrixDimensions[1]);
+        }
+
+        if (info.rank == 0)
+            printMask();
     }
-    myRowType = mh.resizeDatatype(myRowType, matrixDimensions[1]);
-
-    // All rows but the last.
-    auto myWholeTableType = mh.createVectorDatatype(
-        myRowType, blockSize, layoutInfo.wholeBlockCountsPerProcess[0], blockStrides[0]);
-
-    auto lastBlockSize0 = layoutInfo.getLastBlockSizeAtDimension(0, mycoords[0]);
-    if (lastBlockSize0 > 0)
-    {
-        // The last rows may be incomplete.
-        auto lastRowsDatatype = mh.createDynamicArrayDatatype(myRowType, lastBlockSize0);
-
-        // Concatenate the rows into a table.
-        myWholeTableType = mh.createStructDatatype(
-            [&wholeRowsDatatype, &lastRowsDatatype],
-            [0, layoutInfo.wholeBlockCountsPerProcess[0] * blockStrides[0] * matrixDimensions[1]]);
-    }
-    
-    auto viewOffset = mycoords[0] * blockSize * myRowType.diameter + mycoords[1] * blockSize;
-    mh.abortIf(myWholeTableType.elementCount != layoutInfo.getWorkSizeForProcessAt(mycoords), "Algorithm is wrong!");
 
     auto view = mh.createView!int(file);
     view.preallocate(matrixDimensions[0] * matrixDimensions[1]);
-
     view.bind(myWholeTableType, viewOffset);
+
     int[] buffer = new int[](myWholeTableType.elementCount);
 
     void showMatrix()
     {
         Thread.sleep(dur!"msecs"(20 * activeGroupInfo.rank));
         writeln("Matrix of process ", info.rank, " at ", mycoords);
-        mh.printAsMatrix(buffer, layoutInfo.getWorkSizeAtDimension(1, mycoords[1]));
+        version (CyclicInitialization)
+            mh.printAsMatrix(buffer, layoutInfo.getWorkSizeAtDimension(1, mycoords[1]));
+        else
+            writeln(buffer);
     }
 
     if (writeGroupInfo.belongs)
     {
         foreach (ref element; buffer)
-            element = uniform!uint % 5 + 1;
+            element = uniform!uint % 50 + 1;
             // element = info.rank;
         showMatrix();
         view.write(buffer[]);
@@ -163,6 +264,9 @@ void main()
             int[] bufferAll = new int[](matrixDimensions[].fold!`a * b`(1));
             view.read(bufferAll[]);
             mh.printAsMatrix(bufferAll, matrixDimensions[1]);
+            
+            version (CyclicInitialization) {} else
+                printMask();
         }
         
         int maxElement = buffer.fold!max(int.min);

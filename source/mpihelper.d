@@ -107,20 +107,20 @@ enum IsValidDatatype(T) = is(T : int) || is(T : double) || is(T == uint)
     || is(T == IntInt) || is(T == DoubleInt) || IsCustomDatatype!T;
 
 // Must have a getter to allow AliasSeq to work.
-auto getDatatypeId(T)()
+MPI_Datatype getDatatypeId(T)()
 {
     assert(Datatype!T != INVALID_DATATYPE);
     return Datatype!T;
 }
 
-auto createDatatype(T : TElement[N], TElement, size_t N)()
+MPI_Datatype createDatatype(T : TElement[N], TElement, size_t N)()
 {
     MPI_Type_contiguous(cast(int) N, Datatype!TElement, &(Datatype!T));
     MPI_Type_commit(&(Datatype!T));
     return Datatype!T;
 }
 
-void createDatatype(T)() if (is(T == struct))
+MPI_Datatype createDatatype(T)() if (is(T == struct))
 {
     assert(Datatype!T == INVALID_DATATYPE);
 
@@ -137,7 +137,7 @@ void createDatatype(T)() if (is(T == struct))
         // If it's not a builtin type, create the type.
         // I'm not sure if I should do it like this or not.
         // Another thing, circular dependencies are obviously not allowed.
-        static if (IsCustomDatatype!T)
+        static if (IsCustomDatatype!(typeof(t)))
         {
             if (typeId == INVALID_DATATYPE)
                 .createDatatype!(typeof(t));
@@ -152,6 +152,7 @@ void createDatatype(T)() if (is(T == struct))
 
     MPI_Type_create_struct(cast(int) T.tupleof.length, counts.ptr, offsets.ptr, datatypes.ptr, &(Datatype!T));
     MPI_Type_commit(&(Datatype!T));
+    return Datatype!T;
 }
 
 // size_t getDatatypeSize(T)(T type)
@@ -1315,6 +1316,17 @@ TDatatype resizeDatatype(TDatatype : TypedDynamicDatatype!ElementType, ElementTy
 //     return result;
 // }
 
+MPI_Datatype createStructDatatype(MPI_Datatype[] datatypeIds, MPI_Aint[] displacements, int[] blockLengths)
+{
+    assert(datatypeIds.length == displacements.length 
+        && displacements.length == blockLengths.length);
+
+    MPI_Datatype result;
+    MPI_Type_create_struct(cast(int) blockLengths.length, 
+        blockLengths.ptr, displacements.ptr, datatypeIds.ptr, &result);
+    MPI_Type_commit(&result);
+    return result;
+}
 
 auto createStructDatatype(TDatatype, size_t N)(
     TDatatype*[N] datatypes, 
@@ -1345,9 +1357,7 @@ auto createStructDatatype(TDatatype, size_t N)(
         displacements[] *= ElementType.sizeof;
     }}
     
-    MPI_Type_create_struct(cast(int) blockLengths.length, 
-        blockLengths.ptr, displacements.ptr, datatypeIds.ptr, &(result.id));
-    MPI_Type_commit(&(result.id));
+    result.id = createStructDatatype(datatypeIds[], displacements[], blockLengths[]);
 
     MPI_Aint lb;
     MPI_Type_get_extent(result.id, &lb, cast(MPI_Aint*) &(result.diameter));
