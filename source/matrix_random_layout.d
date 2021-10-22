@@ -53,7 +53,7 @@ RandomWorkLayout getRandomWorkLayout(bool SplitLargestFirst = false)(
         size_t minIndex = totalAreas.minIndex;
         size_t maxIndex = totalAreas.maxIndex;
 
-        float randomSize = (uniform01!float + uniform01!float) / 2;
+        float randomSize = (uniform01!float + 0.75 * uniform01!float) / 1.75;
         uint randomDimensionIndex = uniform!uint % 2;
         bool whetherInitialBucketKeepsFirstHalf = cast(bool) (uniform!uint % 2);
 
