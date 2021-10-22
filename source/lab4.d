@@ -6,7 +6,7 @@ void main()
     import mh = mpihelper;
     import std.stdio : writeln;
     import std.random : uniform;
-    import std.algorithm : fold, max;
+    import std.algorithm : fold;
     import std.range : iota, array;
     import core.thread;
     
@@ -64,19 +64,6 @@ void main()
     int[2] mycoords = void;
     mh.getCartesianCoordinates(topologyComm, activeGroupInfo.rank, mycoords[]);
 
-    // The data transfer is made via this file.
-    mh.AccessMode accessMode;
-    with (mh.AccessMode)
-    {
-        accessMode = Create;
-        if (writeGroupInfo.belongs)
-            accessMode |= WriteOnly;
-        else
-            accessMode |= ReadWrite;
-    }
-    auto file = mh.openFile(accessMode, "array.dat", topologyComm);
-    scope(exit) file.close();
-
     version (CyclicInitialization)
     {
         // Create the datatype used for interpreting the file
@@ -126,7 +113,7 @@ void main()
                 [0, layoutInfo.wholeBlockCountsPerProcess[0] * blockStrides[0] * matrixDimensions[1]]);
         }
         
-        auto viewOffset = mycoords[0] * blockSize * myRowType.diameter + mycoords[1] * blockSize;
+        auto viewOffset = mycoords[0] * blockSize * matrixDimensions[1] + mycoords[1] * blockSize;
         mh.abortIf(myWholeTableType.elementCount != layoutInfo.getWorkSizeForProcessAt(mycoords), "Algorithm is wrong!");
     }
     else
@@ -186,11 +173,10 @@ void main()
         size_t[] sortedIndices = iota(offsets.length).array;
         import std.algorithm : sort, map;
         sortedIndices.sort!((a, b) => offsets[a] < offsets[b]);
-        offsets     = iota(offsets.length).map!(index => offsets[sortedIndices[index]]).array;
-        datatypeIds = iota(datatypeIds.length).map!(index => datatypeIds[sortedIndices[index]]).array;
+        offsets     = sortedIndices[].map!(index => offsets[index]).array;
+        datatypeIds = sortedIndices[].map!(index => datatypeIds[index]).array;
 
         myWholeTableType.id = mh.createStructDatatype(datatypeIds, offsets, blockLengths);
-
         int viewOffset = 0;
 
         void printMask()
@@ -218,6 +204,19 @@ void main()
         if (info.rank == 0)
             printMask();
     }
+
+    // The data transfer is made via this file.
+    mh.AccessMode accessMode;
+    with (mh.AccessMode)
+    {
+        accessMode = Create | DeleteOnClose;
+        if (writeGroupInfo.belongs)
+            accessMode |= WriteOnly;
+        else
+            accessMode |= ReadWrite;
+    }
+    auto file = mh.openFile(accessMode, "array.dat", topologyComm);
+    scope(exit) file.close();
 
     auto view = mh.createView!int(file);
     view.preallocate(matrixDimensions[0] * matrixDimensions[1]);
@@ -264,12 +263,12 @@ void main()
             version (CyclicInitialization) {} else
                 printMask();
         }
-        
-        int maxElement = buffer.fold!max(int.min);
-        mh.intraReduce(&maxElement, MPI_MAX, readGroupInfo.rank, 0, topologyComm);
+
+        import std.algorithm : maxElement;
+        int maxElem = buffer.maxElement;
+        mh.intraReduce(&maxElem, MPI_MAX, readGroupInfo.rank, 0, topologyComm);
         if (readGroupInfo.rank == 0)
-            writeln("Overall max element is ", maxElement);
+            writeln("Overall max element is ", maxElem);
     }
     mh.barrier();
-
 }
