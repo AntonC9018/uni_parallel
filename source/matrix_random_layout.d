@@ -55,7 +55,7 @@ RandomWorkLayout getRandomWorkLayout(bool SplitLargestFirst = false)(
 
         float randomSize = (uniform01!float + 0.75 * uniform01!float) / 1.75;
         uint randomDimensionIndex = uniform!uint % 2;
-        bool whetherInitialBucketKeepsFirstHalf = cast(bool) (uniform!uint % 2);
+        bool whetherMaxBucketKeepsSecondHalf = cast(bool) (uniform!uint % 2);
 
         int currentBucketIndex = slots[maxIndex].firstBucketIndex;
         const(Bucket)* currentBucket() { return &bucketAllocator[currentBucketIndex]; }
@@ -72,7 +72,7 @@ RandomWorkLayout getRandomWorkLayout(bool SplitLargestFirst = false)(
         int getAreaChange(const(Bucket*) bucket, int sideLength)
         {
             int areaChange = bucket.dimensions[1 - randomDimensionIndex];
-            if (whetherInitialBucketKeepsFirstHalf)
+            if (whetherMaxBucketKeepsSecondHalf)
                 areaChange *= sideLength;
             else
                 areaChange *= bucket.dimensions[randomDimensionIndex] - sideLength;
@@ -155,7 +155,7 @@ RandomWorkLayout getRandomWorkLayout(bool SplitLargestFirst = false)(
 
         Bucket newBucket = *smallestDifferenceBucket;
         int shiftAmount = smallestDifferenceBucket.dimensions[randomDimensionIndex] - newBucketLength;
-        if (whetherInitialBucketKeepsFirstHalf)
+        if (whetherMaxBucketKeepsSecondHalf)
         {
             newBucket.coords[randomDimensionIndex] += shiftAmount;
             newBucket.dimensions[randomDimensionIndex] = newBucketLength;
