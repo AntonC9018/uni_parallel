@@ -15,6 +15,7 @@ Vedeți [github-ul](https://github.com/AntonC9018/uni_parallel).
     - [Distribuirea aleatoare](#distribuirea-aleatoare)
   - [Divizarea proceselor în două grupuri (și topologii)](#divizarea-proceselor-în-două-grupuri-și-topologii)
   - [Citirea (scrierea) datelor din (în) fișier](#citirea-scrierea-datelor-din-în-fișier)
+  - [Întregul cod](#întregul-cod)
   - [Executarea](#executarea)
     - [Ciclic](#ciclic)
     - [Aleator](#aleator)
@@ -445,6 +446,10 @@ if (readGroupInfo.rank == 0)
 
 > Nu am arătat și nu am explicat unele lucruri neesențiale legate la afișarea matricelor.
 
+
+## Întregul cod
+
+Vedeți întregul cod după [acest link](https://github.com/AntonC9018/uni_parallel/blob/bea9254c4901b6df34b72957be699119a79c2bff/source/lab4.d), pe github.
 
 ## Executarea
 
