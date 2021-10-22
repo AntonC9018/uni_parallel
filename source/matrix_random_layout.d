@@ -139,11 +139,11 @@ RandomWorkLayout getRandomWorkLayout(bool SplitLargestFirst = false)(
 
         assert(selectedBucketIndex != -1);
         assert(selectedBucketIndex < nextBucketIndex);
-        Bucket* smallestDifferenceBucket = &bucketAllocator[selectedBucketIndex];
+        Bucket* selectedBucket = &bucketAllocator[selectedBucketIndex];
 
-        const newBucketLength = mapSize(smallestDifferenceBucket);
+        const newBucketLength = mapSize(selectedBucket);
         assert(newBucketLength >= 1);
-        const areaChange = getAreaChange(smallestDifferenceBucket, newBucketLength);
+        const areaChange = getAreaChange(selectedBucket, newBucketLength);
         assert(areaChange > 0);
 
         slots[maxIndex].totalArea -= areaChange;
@@ -151,19 +151,19 @@ RandomWorkLayout getRandomWorkLayout(bool SplitLargestFirst = false)(
         slots[minIndex].totalArea += areaChange;
         assert(slots[minIndex].totalArea > 0);
 
-        Bucket newBucket = *smallestDifferenceBucket;
-        int shiftAmount = smallestDifferenceBucket.dimensions[randomDimensionIndex] - newBucketLength;
+        Bucket newBucket = *selectedBucket;
+        int shiftAmount = selectedBucket.dimensions[randomDimensionIndex] - newBucketLength;
         if (whetherMaxBucketKeepsSecondHalf)
         {
             newBucket.coords[randomDimensionIndex] += shiftAmount;
             newBucket.dimensions[randomDimensionIndex] = newBucketLength;
-            smallestDifferenceBucket.dimensions[randomDimensionIndex] -= newBucketLength;
+            selectedBucket.dimensions[randomDimensionIndex] -= newBucketLength;
         }
         else
         {
-            smallestDifferenceBucket.coords[randomDimensionIndex] += shiftAmount;
+            selectedBucket.coords[randomDimensionIndex] += shiftAmount;
             newBucket.dimensions[randomDimensionIndex] = shiftAmount;
-            smallestDifferenceBucket.dimensions[randomDimensionIndex] = newBucketLength;
+            selectedBucket.dimensions[randomDimensionIndex] = newBucketLength;
         }
         newBucket.nextBucketIndex = slots[minIndex].firstBucketIndex;
         slots[minIndex].firstBucketIndex = cast(int) nextBucketIndex;
