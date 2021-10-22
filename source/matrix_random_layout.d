@@ -1,4 +1,4 @@
-module matrix_random_distribution;
+module matrix_random_layout;
 
 /// Aka a submatrix
 struct Bucket
