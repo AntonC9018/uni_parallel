@@ -162,8 +162,7 @@ RandomWorkLayout getRandomWorkLayout(bool SplitLargestFirst = false)(
         else
         {
             smallestDifferenceBucket.coords[randomDimensionIndex] += shiftAmount;
-            newBucket.dimensions[randomDimensionIndex] = 
-                smallestDifferenceBucket.dimensions[randomDimensionIndex] - newBucketLength;
+            newBucket.dimensions[randomDimensionIndex] = shiftAmount;
             smallestDifferenceBucket.dimensions[randomDimensionIndex] = newBucketLength;
         }
         newBucket.nextBucketIndex = slots[minIndex].firstBucketIndex;
