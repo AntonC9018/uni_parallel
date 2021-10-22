@@ -100,8 +100,6 @@ RandomWorkLayout getRandomWorkLayout(bool SplitLargestFirst = false)(
             int largestBucketArea = 0;
         else
             int smallestAreaDifference = int.max;
-
-
                 
         while (currentBucketIndex != -1)
         {
