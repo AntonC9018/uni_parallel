@@ -90,13 +90,13 @@ void main()
                 .format(dimIndex == 0 ? "Y" : "X"));
     }
 
+    mh.TypedDynamicDatatype!int result;
+
     // All blocks but the last.
-    auto wholeBlocksDatatype = mh.createVectorDatatype!int(
+    auto myRowType = mh.createVectorDatatype!int(
         blockSize, layoutInfo.wholeBlockCountsPerProcess[1], blockStrides[1]);
     
     // Variable size, because it may not fit completely into the matrix.
-    auto myRowType = wholeBlocksDatatype;
-    
     auto lastBlockSize1 = layoutInfo.getLastBlockSizeAtDimension(1, mycoords[1]);
     if (lastBlockSize1 > 0)
     {
@@ -109,9 +109,8 @@ void main()
     myRowType = mh.resizeDatatype(myRowType, matrixDimensions[1]);
 
     // All rows but the last.
-    auto wholeRowsDatatype = mh.createVectorDatatype(
+    auto myWholeTableType = mh.createVectorDatatype(
         myRowType, blockSize, layoutInfo.wholeBlockCountsPerProcess[0], blockStrides[0]);
-    auto myWholeTableType = wholeRowsDatatype;
 
     auto lastBlockSize0 = layoutInfo.getLastBlockSizeAtDimension(0, mycoords[0]);
     if (lastBlockSize0 > 0)
