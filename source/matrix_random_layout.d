@@ -53,7 +53,8 @@ RandomWorkLayout getRandomWorkLayout(bool SplitLargestFirst = false)(
         size_t minIndex = totalAreas.minIndex;
         size_t maxIndex = totalAreas.maxIndex;
 
-        float randomSize = (uniform01!float + 0.75 * uniform01!float) / 1.75;
+        import std.math : abs, floor;
+        float randomSize = (-abs(uniform01!float * 2 - 1) + 1);
         uint randomDimensionIndex = uniform!uint % 2;
         bool whetherMaxBucketKeepsSecondHalf = cast(bool) (uniform!uint % 2);
 
@@ -63,7 +64,6 @@ RandomWorkLayout getRandomWorkLayout(bool SplitLargestFirst = false)(
 
         bool changedDirection = false;
 
-        import std.math : abs, floor;
         int mapSize(const(Bucket*) bucket) 
         { 
             return cast(int) floor(randomSize * (bucket.dimensions[randomDimensionIndex] - 2)) + 1; 
