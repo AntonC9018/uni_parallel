@@ -6,9 +6,12 @@
             "type": "shell",
             "command": "dmd",
             "args": [
-                "-gf", "-i", "-m64",
+                "-gf",
+                "-i",
+                "-m64",
                 "${workspaceRoot}/source/${config:filename}.d",
                 "-of=${workspaceRoot}/bin/${config:filename}.exe"
+                // ,"-version=SplitLargestFirst"
             ]
         },
         {
@@ -16,10 +19,15 @@
             "type": "shell",
             "command": "dmd",
             "args": [
-                "-gf", "-i", "-m64", "-main", "-unittest",
+                "-gf",
+                "-i",
+                "-m64",
+                "-main",
+                "-unittest",
                 "${workspaceRoot}/source/${config:filename}.d",
                 "-of=${workspaceRoot}/bin/${config:filename}.exe"
-            ]
+            ],
+            "problemMatcher": []
         }
     ]
 }

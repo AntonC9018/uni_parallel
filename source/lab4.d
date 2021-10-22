@@ -188,12 +188,8 @@ void main()
         sortedIndices.sort!((a, b) => offsets[a] < offsets[b]);
         offsets     = iota(offsets.length).map!(index => offsets[sortedIndices[index]]).array;
         datatypeIds = iota(datatypeIds.length).map!(index => datatypeIds[sortedIndices[index]]).array;
-        
 
         myWholeTableType.id = mh.createStructDatatype(datatypeIds, offsets, blockLengths);
-        {MPI_Aint lb, extent;
-        MPI_Type_get_extent(myWholeTableType.id, &lb, &extent);
-        writeln("Process ", activeGroupInfo.rank, " extent: ", extent/4, ", lb: ", lb/4, " Element count: ", myWholeTableType.elementCount);}
 
         int viewOffset = 0;
 
