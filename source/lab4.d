@@ -176,7 +176,7 @@ void main()
         offsets     = sortedIndices[].map!(index => offsets[index]).array;
         datatypeIds = sortedIndices[].map!(index => datatypeIds[index]).array;
 
-        myWholeTableType.id = mh.createStructDatatype(datatypeIds, offsets, blockLengths);
+        myWholeTableType.id = mh.createStructDatatypeRaw(datatypeIds, offsets, blockLengths);
         int viewOffset = 0;
 
         void printMask()

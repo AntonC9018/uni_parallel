@@ -1316,10 +1316,14 @@ TDatatype resizeDatatype(TDatatype : TypedDynamicDatatype!ElementType, ElementTy
 //     return result;
 // }
 
-MPI_Datatype createStructDatatype(MPI_Datatype[] datatypeIds, MPI_Aint[] displacements, int[] blockLengths)
+MPI_Datatype createStructDatatypeRaw(MPI_Datatype[] datatypeIds, MPI_Aint[] displacements, int[] blockLengths)
 {
     assert(datatypeIds.length == displacements.length 
         && displacements.length == blockLengths.length);
+
+    import std.algorithm : isStrictlyMonotonic;
+    // Probably should check for overlapping? At least that of blockLengths?
+    assert(isStrictlyMonotonic(displacements));
 
     MPI_Datatype result;
     MPI_Type_create_struct(cast(int) blockLengths.length, 
@@ -1357,7 +1361,7 @@ auto createStructDatatype(TDatatype, size_t N)(
         displacements[] *= ElementType.sizeof;
     }}
     
-    result.id = createStructDatatype(datatypeIds[], displacements[], blockLengths[]);
+    result.id = createStructDatatypeRaw(datatypeIds[], displacements[], blockLengths[]);
 
     MPI_Aint lb;
     MPI_Type_get_extent(result.id, &lb, cast(MPI_Aint*) &(result.diameter));
@@ -1370,6 +1374,23 @@ auto createStructDatatype(TDatatype, size_t N)(
 
     return result;
 }
+
+// MPI_Datatype createIndexedDatatypeRaw(MPI_Datatype elementType, int[] diplacements, int[] blockLengths)
+// {
+//     import std.algorithm : isStrictlyMonotonic;
+//     assert(isStrictlyMonotonic(diplacements));
+
+//     MPI_Type_create_indexed_block(diplacements.length, 
+// }
+
+// TypedDynamicDatatype!ElementType createIndexedDatatype(ElementType)(int[] displacements, int[] blockLengths)
+// {
+//     TypedDynamicDatatype!ElementType result;
+//     import std.algorithm : sum, isStrictlyMonotonic;
+//     result.elementCount = sum(blockLengths);
+//     result.diameter = displacements[$ - 1] - displacements[0]
+// }
+
 
 /// Generates a random number and broadcasts it to all processes.
 T bcastUniform(T)(T lowerBound, T upperBound, MPI_Comm comm = MPI_COMM_WORLD)
