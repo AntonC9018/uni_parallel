@@ -150,15 +150,13 @@ void main()
         while (currentBucketIndex != -1)
         {
             const(Bucket)* bucket = &layout.buckets[currentBucketIndex];
-            auto dt = mh.createDynamicArrayDatatype!int(bucket.dimensions[1]);
-
-            myWholeTableType.elementCount += dt.elementCount * bucket.dimensions[0];
+            myWholeTableType.elementCount += bucket.dimensions[1] * bucket.dimensions[0];
 
             foreach (rowOffset; 0..bucket.dimensions[0])
             {
-                datatypeIds ~= dt.id;
+                datatypeIds ~= MPI_INT;
                 offsets ~= cast(MPI_Aint) (((rowOffset + bucket.coords[0]) * matrixDimensions[1] + bucket.coords[1]) * int.sizeof);
-                blockLengths ~= 1;
+                blockLengths ~= bucket.dimensions[1];
             }
 
             currentBucketIndex = bucket.nextBucketIndex;
