@@ -2,15 +2,13 @@ module matrix;
 
 void printMatrix(M)(const(M) matrix) 
 {
-    import std.stdio : write;
+    import std.stdio : writef, writeln;
     foreach (rowIndex; 0..matrix.height)
     foreach (colIndex; 0..matrix.width)
     {
-        write(matrix[rowIndex, colIndex]);
-        if (colIndex != matrix.width - 1)
-            write(" ");
-        else
-            write("\n");
+        writef("%3d", matrix[rowIndex, colIndex]);
+        if (colIndex == matrix.width - 1)
+            writeln();
     }
 }
 

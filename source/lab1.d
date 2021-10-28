@@ -15,25 +15,35 @@
 */
 
 // DATA processed by the processes
-enum DataWidth = 6;
-immutable AData = [
-    4,  0,  0,  0,  0,  0,
-    3,  3,  0,  0,  0,  0,
-    2,  2,  2,  0,  0,  0,
-    1,  1,  1,  1,  0,  0,
-    0,  0,  0,  0,  0,  0,
-    -1, -1, -1, -1, -1, -1,
-    // -1, -1, -1, -1, -1, -1,
-];
-immutable BData = [
-    0,  2,  1,  0, -1, -2,
-    0,  0,  1,  0, -1, -2,
-    0,  0,  0,  0, -1, -2,
-    0,  0,  0,  0, -1, -2,
-    0,  0,  0,  0,  0, -2,
-    0,  0,  0,  0,  0,  0,
-    // -1, -1, -1, -1, -1, -1,
-];
+static if (1)
+{
+    enum DataWidth = 6;
+    immutable AData = [
+        4,  0,  0,  0,  0,  0,
+        3,  3,  0,  0,  0,  0,
+        2,  2,  2,  0,  0,  0,
+        1,  1,  1,  1,  0,  0,
+        0,  0,  0,  0,  0,  0,
+        -1, -1, -1, -1, -1, -1,
+        // -1, -1, -1, -1, -1, -1,
+    ];
+    immutable BData = [
+        0,  2,  1,  0, -1, -2,
+        0,  0,  1,  0, -1, -2,
+        0,  0,  0,  0, -1, -2,
+        0,  0,  0,  0, -1, -2,
+        0,  0,  0,  0,  0, -2,
+        0,  0,  0,  0,  0,  0,
+        // -1, -1, -1, -1, -1, -1,
+    ];
+}
+else static if (1)
+{
+    enum DataWidth = 3;
+    immutable AData = [ 1, 1, 1, 1, 1, 1, 1, 1, 1 ];
+    immutable BData = [ 2, 2, 2, 2, 2, 2, 2, 2, 2 ];
+}
+
 static assert(AData.length == BData.length);
 
 version(ArbitraryMatrix) 
@@ -132,6 +142,33 @@ int main()
         }
     }
 
+    // Debugging: print matrices
+    static if (1)
+    {
+        import core.thread;
+        if (info.rank == 0)
+        {
+            writeln("Whole matrix A:");
+            printMatrix(AData, DataWidth);
+            writeln("Whole matrix B:");
+            printMatrix(BData, DataWidth);
+            writeln();
+        }
+        Thread.sleep(dur!"msecs"(20 * info.rank));
+        writeln("Process ", info.rank);
+        writeln("Matrix subA:");
+        matrix.printMatrix(AMatrix);
+        writeln("Matrix subB:");
+        matrix.printMatrix(BMatrix);
+        writeln("Matrix isMax(subA):");
+        matrix.printMatrix(matrixOfWhetherIndexIsMaximumA);
+        writeln("Matrix isMax(subB):");
+        matrix.printMatrix(matrixOfWhetherIndexIsMaximumB);
+        writeln();
+        Thread.sleep(dur!"msecs"(20));
+        mh.barrier();
+    }
+
     // ================================================
     //     Step 3 & 4: Share values & Calculate Nash 
     // ================================================
@@ -167,6 +204,7 @@ int main()
 
         auto receiveBufferSlice = receiveBuffer[0..(partnerNumAllocatedRowsB * numAllocatedColumnsA)];
         mh.sendRecv(sendBufferSlice, processIndex, tag, receiveBufferSlice, processIndex, tag);
+        // writeln("Proccess ", info.rank, " sent ", sendBufferSlice, " and received ", receiveBufferSlice);
 
         auto receiveMatrix = matrixFromArray(receiveBufferSlice, numAllocatedColumnsA);
         foreach (rowIndex; 0..partnerNumAllocatedRowsB)
@@ -415,15 +453,13 @@ void printMatrix(T)(const(T)[] matrix, size_t width)
 {
     const height = matrix.length / width;
 
-    import std.stdio : write;
+    import std.stdio : writef, writeln;
     foreach (rowIndex; 0..height)
     foreach (colIndex; 0..width)
     {
-        write(matrix[rowIndex * width + colIndex]);
-        if (colIndex != width - 1)
-            write(" ");
-        else
-            write("\n");
+        writef("%3d", matrix[rowIndex * width + colIndex]);
+        if (colIndex == width - 1)
+            writeln();
     }
 }
 
