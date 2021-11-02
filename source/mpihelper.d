@@ -354,6 +354,9 @@ int allgatherAlloc(T, U)(const(T) sendBuffer, out U[] recvBuffer, int groupSize,
 template OperationInfo(alias operation, bool _IsUserDefined = true)
 {
     enum IsUserDefined = _IsUserDefined;
+    pragma(msg, typeof(&operation));
+
+    extern (C):
     static if (is(typeof(&operation) : void function(T*, T*, int*), T))
     {
         enum HasRequiredType = true;
@@ -393,7 +396,7 @@ template OperationInfo(alias operation, bool _IsUserDefined = true)
 
 struct Operation(alias operation)
 {
-    static if (is(operation == function))
+    static if (is(typeof(operation) == function))
     {
         MPI_Op handle;
         mixin OperationInfo!operation;
@@ -421,23 +424,23 @@ struct Operation(alias operation)
 // MPI_BXOR            bit-wise xor
 // MPI_MAXLOC          max value and location
 // MPI_MINLOC          min value and location
-alias    opMax = Operation!MPI_MAX;
-alias    opMin = Operation!MPI_MIN;
-alias    opSum = Operation!MPI_SUM;
-alias   opProd = Operation!MPI_PROD;
-alias   opLand = Operation!MPI_LAND;
-alias   opBand = Operation!MPI_BAND;
-alias    opLor = Operation!MPI_LOR;
-alias    opBor = Operation!MPI_BOR;
-alias   opLxor = Operation!MPI_LXOR;
-alias   opBxor = Operation!MPI_BXOR;
-alias opMaxloc = Operation!MPI_MAXLOC;
-alias opMinloc = Operation!MPI_MINLOC;
+// alias    opMax = Operation!MPI_MAX;
+// alias    opMin = Operation!MPI_MIN;
+// alias    opSum = Operation!MPI_SUM;
+// alias   opProd = Operation!MPI_PROD;
+// alias   opLand = Operation!MPI_LAND;
+// alias   opBand = Operation!MPI_BAND;
+// alias    opLor = Operation!MPI_LOR;
+// alias    opBor = Operation!MPI_BOR;
+// alias   opLxor = Operation!MPI_LXOR;
+// alias   opBxor = Operation!MPI_BXOR;
+// alias opMaxloc = Operation!MPI_MAXLOC;
+// alias opMinloc = Operation!MPI_MINLOC;
 
-auto createOp(alias operation)(int commute) 
+auto createOp(alias operation)(bool commute) 
 {
     Operation!operation op;
-    MPI_Op_create(&(op.func), commute, &(op.handle));
+    MPI_Op_create(&op.func, cast(int) commute, &(op.handle));
     return op;
 }
 
