@@ -87,8 +87,8 @@ int main()
         size_t width;
 
         // ref int processed() { return reduceBuffer[0]; }
-        int[] maxElementCount() { return reduceBuffer[0..width]; }
-        int[] getValues(size_t rowIndex) 
+        int[] maxElementCounts() { return reduceBuffer[0..width]; }
+        int[] getRow(size_t rowIndex) 
         { 
             assert(rowIndex < numRows);
             size_t startIndex = width + rowIndex * width;
@@ -99,7 +99,7 @@ int main()
         auto iterateRows(size_t startingIndex) 
         {
             return iota(startingIndex, numRows)
-                .map!getValues
+                .map!getRow
                 .until(a => a[0] == int.min);
         }
     }
@@ -139,15 +139,15 @@ int main()
         reduceBufferInfo.reduceBuffer = stuff.reduceBuffer12.ptr;
 
         // Now set up the buffer
-        reduceBufferInfo.maxElementCount[0] = -1;
+        reduceBufferInfo.maxElementCounts[0] = -1;
         foreach (rowIndex; 0..matrix.height)
         foreach (colIndex; 0..matrix.width)
         {
-            reduceBufferInfo.getValues(rowIndex)[colIndex] = matrix[rowIndex, colIndex];
+            reduceBufferInfo.getRow(rowIndex)[colIndex] = matrix[rowIndex, colIndex];
         }
         foreach (rowIndex; matrix.height..stuff.maxRowsPerProcess)
         {
-            reduceBufferInfo.getValues(rowIndex)[] = int.min;
+            reduceBufferInfo.getRow(rowIndex)[] = int.min;
         }
 
         return stuff;
@@ -168,26 +168,26 @@ int main()
         auto inBufferInfo = FirstPassReduceBufferInfo(inReduceBuffer, currentReduceBufferNumRows, currentWidth);
         auto inoutBufferInfo = FirstPassReduceBufferInfo(inoutReduceBuffer, currentReduceBufferNumRows, currentWidth);
         assert(inBufferInfo.length == length, "Oh crap, the length is wrong. Probably forgot to set globals.");
-        auto firstRowValues = inoutBufferInfo.getValues(0); 
+        int[] firstRow = inoutBufferInfo.getRow(0); 
 
         void update(int[] rowValues)
         {
             foreach (colIndex; 0..inoutBufferInfo.width)
             {
-                if (rowValues[colIndex] == firstRowValues[colIndex])
-                    inoutBufferInfo.maxElementCount[colIndex]++;
-                else if (rowValues[colIndex] > firstRowValues[colIndex])
+                if (rowValues[colIndex] == firstRow[colIndex])
+                    inoutBufferInfo.maxElementCounts[colIndex]++;
+                else if (rowValues[colIndex] > firstRow[colIndex])
                 {
-                    inoutBufferInfo.maxElementCount[colIndex] = 1;
-                    firstRowValues[colIndex] = rowValues[colIndex];
+                    inoutBufferInfo.maxElementCounts[colIndex] = 1;
+                    firstRow[colIndex] = rowValues[colIndex];
                 }
             }
         }
 
         // If the inout buffer has not been processed, do it.
-        if (inoutBufferInfo.maxElementCount[0] == -1)
+        if (inoutBufferInfo.maxElementCounts[0] == -1)
         {
-            inoutBufferInfo.maxElementCount[] = 1;
+            inoutBufferInfo.maxElementCounts[] = 1;
             inoutBufferInfo.iterateRows(1).each!update;
         }
         inBufferInfo.iterateRows(0).each!update;
