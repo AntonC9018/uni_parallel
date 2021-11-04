@@ -177,4 +177,4 @@ Nash equilibrium points:
 
 ## Întregul code
 
-Întregul cod vedeți [pe github]().
+Întregul cod vedeți [pe github](https://github.com/AntonC9018/uni_parallel/blob/c13c45f21bd80abf968d419beab2340834e68747/source/lab1_op.d).
