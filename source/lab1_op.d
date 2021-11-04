@@ -227,7 +227,6 @@ int main()
         struct Position { int colIndex; int rowIndex; }
         bool[Position] hashSet;
         auto ASecondPassBufferInfo = AStuff.getSecondPassBufferInfo();
-
         foreach (colIndex; 0..AStuff.matrix.width)
         foreach (rowIndex; ASecondPassBufferInfo.getIndexBufferHead(colIndex))
         {
