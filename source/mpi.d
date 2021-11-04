@@ -1339,7 +1339,7 @@ int MPI_Ineighbor_alltoallw(void* sendbuf, int* sendcounts, MPI_Aint* sdispls, M
         MPI_Comm comm, MPI_Request* request);
 MPI_Fint MPI_Op_c2f(MPI_Op op);
 int MPI_Op_commutative(MPI_Op op, int* commute);
-int MPI_Op_create(MPI_User_function* function_, int commute, MPI_Op* op);
+int MPI_Op_create(MPI_User_function function_, int commute, MPI_Op* op);
 int MPI_Open_port(MPI_Info info, char* port_name);
 MPI_Op MPI_Op_f2c(MPI_Fint op);
 int MPI_Op_free(MPI_Op* op);

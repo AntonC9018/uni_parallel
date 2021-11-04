@@ -351,65 +351,56 @@ int allgatherAlloc(T, U)(const(T) sendBuffer, out U[] recvBuffer, int groupSize,
         sendBufferInfo.length, sendBufferInfo.datatype, comm);
 }
 
-template OperationInfo(alias operation, bool _IsUserDefined = true)
+private mixin template TypedWrappedOperationPart(string functionCall)
 {
-    enum IsUserDefined = _IsUserDefined;
-    pragma(msg, typeof(&operation));
-
-    extern (C):
-    static if (is(typeof(&operation) : void function(T*, T*, int*), T))
+    enum HasRequiredType = true;
+    alias RequiredType = T;
+    extern(C) void func(void* invec, void* inoutvec, int* length, MPI_Datatype* datatype)
     {
-        enum HasRequiredType = true;
-        alias RequiredType = T;
-        static void func(void* invec, void* inoutvec, int* length, MPI_Datatype* datatype)
+
+        import std.stdio;
+        try
         {
-            return operation(cast(T*) invec, cast(T*) inoutvec, length);
+            mixin(functionCall);
+        }
+        catch(Exception e)
+        {
+            assert(false, "The function threw an exception, which should not happen");
         }
     }
-    else static if (is(typeof(&operation) : void function(T*, T*, int), T))
+}
+
+template WrappedOperation(alias operation)
+{
+    static if (is(typeof(&operation) : void function(T*, T*, int), T))
     {
-        enum HasRequiredType = true;
-        alias RequiredType = T;
-        static void func(void* invec, void* inoutvec, int* length, MPI_Datatype* datatype)
-        {
-            return operation(cast(T*) invec, cast(T*) inoutvec, *length);
-        }
+        mixin TypedWrappedOperationPart!("operation(cast(T*) invec, cast(T*) inoutvec, *length);");
     }
     else static if (is(typeof(&operation) : void function(T[], T[]), T))
     {
-        enum HasRequiredType = true;
-        alias RequiredType = T;
-        static void func(void* invec, void* inoutvec, int* length, MPI_Datatype* datatype)
-        {
-            return operation((cast(T*) invec)[0..*length], (cast(T*) inoutvec)[0..*length]);
-        }
+        mixin TypedWrappedOperationPart!("operation((cast(T*) invec)[0..*length], (cast(T*) inoutvec)[0..*length]);");
     }
-    else
+    else static if (is(typeof(&operation) : void function(void*, void*, int*, MPI_Datatype*)))
     {
         enum HasRequiredType = false;
-        static void func(void* invec, void* inoutvec, int* length, MPI_Datatype* datatype)
+        extern(C) void func(void* invec, void* inoutvec, int* length, MPI_Datatype* datatype)
         {
             return operation(invec, inoutvec, length, datatype);
         }
     }
+    else static assert(0, "Invalid function type: " ~ typeof(&operation).stringof);
 }
 
-struct Operation(alias operation)
+struct Operation
 {
-    static if (is(typeof(operation) == function))
-    {
-        MPI_Op handle;
-        mixin OperationInfo!operation;
-    }
-    // TODO: add the ability to wrap these in with types.
-    else
-    {
-        static MPI_Op handle() { return operation; }
-        enum HasRequiredType = false;
-        enum IsUserDefined = false;
-    }
+    MPI_Op handle;
 }
 
+struct TypedOperation(RequiredType) 
+{
+    Operation _operation;
+    alias _operation this;
+}
 
 // https://www.open-mpi.org/doc/v3.0/man3/MPI_Reduce_local.3.php
 // MPI_MAX             maximum
@@ -424,29 +415,28 @@ struct Operation(alias operation)
 // MPI_BXOR            bit-wise xor
 // MPI_MAXLOC          max value and location
 // MPI_MINLOC          min value and location
-// alias    opMax = Operation!MPI_MAX;
-// alias    opMin = Operation!MPI_MIN;
-// alias    opSum = Operation!MPI_SUM;
-// alias   opProd = Operation!MPI_PROD;
-// alias   opLand = Operation!MPI_LAND;
-// alias   opBand = Operation!MPI_BAND;
-// alias    opLor = Operation!MPI_LOR;
-// alias    opBor = Operation!MPI_BOR;
-// alias   opLxor = Operation!MPI_LXOR;
-// alias   opBxor = Operation!MPI_BXOR;
-// alias opMaxloc = Operation!MPI_MAXLOC;
-// alias opMinloc = Operation!MPI_MINLOC;
 
 auto createOp(alias operation)(bool commute) 
 {
-    Operation!operation op;
-    MPI_Op_create(&op.func, cast(int) commute, &(op.handle));
-    return op;
+    alias wrappedOp = WrappedOperation!operation;
+    static if (wrappedOp.HasRequiredType)
+        TypedOperation!(wrappedOp.RequiredType) result;
+    else
+        Operation result;
+    // assert(wrappedOp.funcPtr == null);
+    // wrappedOp.funcPtr = &wrappedOp.func;
+    MPI_Op_create(&wrappedOp.func, cast(int) commute, &(result.handle));
+    return result;
 }
 
-int freeOp(Op)(Op op)
+int free(Op)(ref Op op) if (__traits(hasMember, op, "handle"))
 {
     return MPI_Op_free(&(op.handle));
+}
+
+int free(ref MPI_Op op)
+{
+    return MPI_Op_free(&op);
 }
 
 // /// Op must be duck-compatible with Operation!func.
@@ -474,7 +464,7 @@ int intraReduce(T, Op)(T buffer, Op op, int rank, int root, MPI_Comm comm = MPI_
     MPI_Op opHandle;
     static if (__traits(hasMember, op, "handle"))
     {
-        static assert(!Op.HasRequiredType || is(bufferInfo.ElementType == Op.RequiredType));
+        static assert(is(Op == Operation) || !is(Op == TypedOperation!T));
         opHandle = op.handle;
     }
     else
