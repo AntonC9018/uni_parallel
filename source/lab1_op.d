@@ -42,155 +42,155 @@ int main()
     auto info = mh.initialize();
     scope(exit) mh.finalize();
 
-    const root = 0;
-    bool isRoot() { return info.rank == root; }
-    
     int offsetForProcess(int processIndex, int vectorCount)
     {
         return processIndex * vectorCount / info.size;
     }
-    enum DataHeight = AData.length / DataWidth;
 
-    // ================================================
-    //      Step 1: Distribute rows / columns.
-    // ================================================
-    // The number of columns = width of the matrix.
+    // 1. Distribute rows
+    // 2. Create a buffer format. It will be just like in maxloc (index + value).
+    //    we may not use maxloc because we may have more than one row per process.
+    //    Fill the unused rows with int.min.
+    // 3. Count the number of max elements with another custom op. 
+    //    This will need to have just the numbers + the current counts per each column in the buffer.
+    // 4. Create a vector of that many elements per each column.
+    //    They shall stay one right after the other in memory and their lengths will be set globally.
+    //    The vector will also include the current position.
+    //    Also we will need a flag, initially false everywhere, of whether the inout vector has been ever processed,
+    //    or needs to be considered (whether the indices of max elements need to be saved).
+    //    After those vectors, we will have the initial maxloc data to actually find the indices of the max elements.
+    // 5. Store the indices from the first matrix in an associative array (otherwise the algo is O(n^2)).
+    // 6. Check if the inverses of the vectors of the second matrix are in that array.
+    //    Ones that are, are our answers.
 
-    const columnIndexStartA = offsetForProcess(info.rank, DataWidth);
-    const columnIndexEndA = offsetForProcess(info.rank + 1, DataWidth);
-    const numAllocatedColumnsA = cast(size_t) columnIndexEndA - columnIndexStartA;
-    int[] ABuffer = new int[](numAllocatedColumnsA * DataHeight);
-    size_t AIndex = 0; 
-    foreach (rowIndex; 0..DataHeight)
-    foreach (colIndex; 0..numAllocatedColumnsA)
+    // So, for the first two custom ops, we need:
+    // 1. ~An integer of whether a given vector has been processed. 
+    //    This will make sure the inout vector is processed exactly once.~ [processed]
+    //    Instead, maxElementCount of -1 indicates that the vector has not been processed.
+    // 2. A buffer with IntInt, storing ~the index of the element~ + the value. [indexValue]
+    //    Actually, only the last step needs the indices. So this stores [value] instead
+    // 3. ~A buffer with the current max element (no, this will be stored in the 2.)~
+    // 4. A buffer with the max element count. [maxElementCount]
+    /// I will even combine the first two custom ops, so it finds max + count at once.
+    // 
+    // For the third op, we need:
+    // 1. The vectors and the current max element index indices thing.
+    // Also, [processed] and [indexValue].
+    //
+    // We cannot really combine the first two and the last buffer, because we can't apriori
+    // know the length of the last buffer.
+    // So we'll just combine the first two.
+    static struct FirstPassReduceBufferInfo
     {
-        ABuffer[AIndex++] = AData[rowIndex * DataWidth + columnIndexStartA + colIndex];
-    }
+        int* reduceBuffer;
+        size_t numRows;
+        size_t width;
 
-    // The number of rows = height of the matrix.
-    const rowIndexStartB = offsetForProcess(info.rank, DataHeight);
-    const rowIndexEndB = offsetForProcess(info.rank + 1, DataHeight);
-    const numAllocatedRowsB = cast(size_t) rowIndexEndB - rowIndexStartB;
-    int[] BBuffer = new int[](numAllocatedRowsB * DataWidth);
-    size_t BIndex = 0; 
-    foreach (rowIndex; 0..numAllocatedRowsB)
-    foreach (colIndex; 0..DataWidth)
-    {
-        BBuffer[BIndex++] = BData[(rowIndex + rowIndexStartB) * DataWidth + colIndex];
-    }
-    
-    static struct MaxIndexVectorInfo
-    {
-        int size;
-        int maxValue;
-        int numMaxIndices;
-    }
+        // ref int processed() { return reduceBuffer[0]; }
+        int[] maxElementCount() { return reduceBuffer[0..width]; }
+        int[] getValues(size_t rowIndex) 
+        { 
+            assert(rowIndex < numRows);
+            size_t startIndex = width + rowIndex * width;
+            return reduceBuffer[startIndex .. startIndex + width];
+        }
+        size_t length() { return width * numRows + width; }
 
-    static struct MaxIndexVector
-    {
-        MaxIndexVectorInfo* info;
-        alias info this;
-
-        size_t sizeOfVectorBuffer() { return cast(size_t) info.size; }
-        size_t sizeOfVectorType() { return sizeOfVectorBuffer + MaxIndexVectorInfo.tupleof.length; }
-        int[] indexBuffer() { return (cast(int*)(info + 1))[0..sizeOfVectorBuffer]; }
-        int[] indices() { return indexBuffer[0..info.numMaxIndices]; }
-        
-        this(int* basePtr, size_t vectorIndex)
+        auto iterateRows(size_t startingIndex) 
         {
-            info = cast(MaxIndexVectorInfo*) (basePtr + vectorIndex * basePtr[0]);
+            return iota(startingIndex, numRows)
+                .map!getValues
+                .until(a => a[0] == int.min);
         }
     }
 
-    // The data buffer is assumed to be transposed???
-    // So it's shortDimension columns and longDimension rows.
-    int[] makeReduceBuffer(size_t longDimension, size_t shortDimension, size_t shortDimensionStretched, const int[] dataBuffer)
+    struct Stuff(TMatrix)
     {
-        int[] reduceBuffer = new int[]((3 + shortDimensionStretched) * longDimension);
-        const vectorLengthInInts = (3 + shortDimensionStretched);
+        TMatrix dataMatrix;
+        /// The starting and the ending index for the process, inclusive.
+        Range rowIndexRange;
+        /// The maximum number of rows per process.
+        size_t maxRowsPerProcess;
+        /// Stores 
+        /// 1 x maxElementCount[height],
+        /// reduceBufferBlockLength x value[height]
+        int[] reduceBuffer12;
 
-        foreach (vectorIndex; 0..longDimension)
+        FirstPassReduceBufferInfo getFirstPassBufferInfo()
         {
-            auto vector = MaxIndexVector(reduceBuffer.ptr, vectorIndex);
-            vector.size = cast(int) shortDimensionStretched;
-            vector.maxValue = int.min;
-            vector.numMaxIndices = 0;
+            return FirstPassReduceBufferInfo(reduceBuffer12.ptr, maxRowsPerProcess, dataMatrix.width);
+        }
+    }
 
-            const startIntIndex = vectorIndex * shortDimension;
-            if (dataBuffer.length > startIntIndex)
+    auto getStuff(TMatrix)(TMatrix matrix)
+    {
+        Stuff!TMatrix stuff;
+        stuff.matrix = matrix;
+
+        const rowIndexStart = offsetForProcess(info.rank, matrix.height);
+        const rowIndexEnd = offsetForProcess(info.rank + 1, matrix.height);
+        stuff.range = Range(rowIndexStart, rowIndexEnd - 1);
+        stuff.maxRowsPerProcess = cast(size_t) (matrix.height + matrix.height - 1) / (info.size);
+
+        FirstPassReduceBufferInfo reduceBufferInfo;
+        reduceBufferInfo.numRows = stuff.maxRowsPerProcess;
+        reduceBufferInfo.width = matrix.width;
+        stuff.reduceBuffer12 = new int[](reduceBufferInfo.length);
+        reduceBufferInfo.reduceBuffer = stuff.reduceBuffer12.ptr;
+
+        // Now set up the buffer
+        reduceBufferInfo.maxElementCount[0] = -1;
+        foreach (rowIndex; 0..matrix.height)
+        foreach (colIndex; 0..matrix.width)
+        {
+            reduceBufferInfo.getValues(rowIndex)[colIndex] = matrix[rowIndex, colIndex];
+        }
+        foreach (rowIndex; matrix.height..stuff.maxRowsPerProcess)
+        {
+            reduceBufferInfo.getValues(rowIndex)[] = int.min;
+        }
+
+        return stuff;
+    }
+
+    auto AFullMatrix = matrixFromArray(AData, DataWidth);
+    auto AStuff = getStuff(AFullMatrix);
+    auto BFullMatrix = matrixFromArray(BData, DataWidth).transposed;
+    auto BStuff = getStuff(BFullMatrix);
+
+    static shared size_t currentWidth;
+    static shared size_t currentReduceBufferNumRows;
+    static void firstPassOperationFunction(int* inReduceBuffer, int* inoutReduceBuffer, int length)
+    {
+        // We will be making use of the global variables currentHeight and currentReduceBufferWidth,
+        // which will have to be set prior to calling this op reduction.
+        // We will use the length parameter only for error checking.
+        auto inBufferInfo = FirstPassReduceBufferInfo(inReduceBuffer, currentReduceBufferNumRows, currentWidth);
+        auto inoutBufferInfo = FirstPassReduceBufferInfo(inoutReduceBuffer, currentReduceBufferNumRows, currentWidth);
+        assert(inBufferInfo.length == length, "Oh crap, the length is wrong. Probably forgot to set globals.");
+        auto firstRowValues = inoutBufferInfo.getValues(0); 
+
+        void update(int[] rowValues)
+        {
+            foreach (colIndex; 0..inoutBufferInfo.width)
             {
-                auto bufferSlice = dataBuffer[startIntIndex .. startIntIndex + vectorLengthInInts];
-                auto maxIndex = dataBuffer.maxIndex();
-                
-                foreach (valueIndex, value; bufferSlice[maxIndex..$])
+                if (rowValues[colIndex] == firstRowValues[colIndex])
+                    inoutBufferInfo.maxElementCount[colIndex]++;
+                else if (rowValues[colIndex] > firstRowValues[colIndex])
                 {
-                    if (value == vector.maxValue)
-                    {
-                        vector.indexBuffer[vector.numMaxIndices] = cast(int) (valueIndex % shortDimension);
-                        vector.numMaxIndices++;
-                    }
+                    inoutBufferInfo.maxElementCount[colIndex] = 1;
+                    firstRowValues[colIndex] = rowValues[colIndex];
                 }
             }
-            else
-            {
-                assert(info.rank != 0, "Root cannot reach this case since it has most things");
-            }
         }
-        return reduceBuffer;
-    }
 
-    size_t maxPossibleAllocatedAColumns = (DataWidth + DataWidth - 1) / (info.size);
-    int[] reduceBufferA = makeReduceBuffer(DataHeight, maxPossibleAllocatedAColumns, DataWidth, ABuffer);
-
-    size_t maxPossibleAllocatedBRows = (DataHeight + DataHeight - 1) / (info.size);
-    int[] reduceBufferB = makeReduceBuffer(DataWidth, maxPossibleAllocatedBRows, DataHeight, BBuffer);
-
-    static void allmaxOperationFunction(int* inVectors, int* inoutVectors, int numInts)
-    {
-        auto inoutVector0 = MaxIndexVector(inoutVectors, 0);
-        size_t numVectors = (numInts / inoutVector0.sizeOfVectorType);
-        
-        foreach (vectorIndex; 0..numVectors)
+        // If the inout buffer has not been processed, do it.
+        if (inoutBufferInfo.maxElementCount[0] == -1)
         {
-            auto inVector    = MaxIndexVector(inVectors, vectorIndex);
-            auto inoutVector = MaxIndexVector(inoutVectors, vectorIndex);
-            if (inVector.maxValue < inoutVector.maxValue)
-                continue;
-            if (inVector.maxValue == inoutVector.maxValue)
-            {
-                inoutVector.indexBuffer[inoutVector.numMaxIndices..inoutVector.numMaxIndices + inVector.numMaxIndices] = 
-                    inVector.indices;
-                inoutVector.numMaxIndices += inVector.numMaxIndices;
-            }
-            else
-            {
-                inoutVector.indices[] = inVector.indices[];
-                inoutVector.numMaxIndices = inVector.numMaxIndices;
-                inoutVector.maxValue = inVector.maxValue;
-            }
+            inoutBufferInfo.maxElementCount[] = 1;
+            inoutBufferInfo.iterateRows(1).each!update;
         }
-    }
-
-    auto op = mh.createOp!allmaxOperationFunction(true);
-    scope(exit) mh.freeOp(op);
-    mh.intraReduce(reduceBufferA, op, info.rank, 0);
-    mh.intraReduce(reduceBufferB, op, info.rank, 0);
-
-    if (info.rank == 0)
-    {
-        import std.typecons;
-        // Tuple!(int, int)[] points;
-        foreach (vectorIndex; 0..maxPossibleAllocatedAColumns)
-        {
-            auto vectorA = MaxIndexVector(reduceBufferA.ptr, vectorIndex);
-            foreach (rowIndex; vectorA.inoutIndices[0..vector.numMaxIndices])
-            {
-                auto vectorB = MaxIndexVector(reduceBufferB.ptr, rowIndex);
-                auto matchingIndexPosition = vectorB.indices.countUntil!(i => i == vectorIndex);
-                if (matchingIndexPosition < vectorB.numMaxIndices)
-                    writeln("Found equilibrium point (", vectorIndex, ", ", rowIndex); 
-            }
-        }
+        inBufferInfo.iterateRows(0).each!update;
     }
 
     // Debugging: print matrices
@@ -200,9 +200,9 @@ int main()
         if (info.rank == 0)
         {
             writeln("Whole matrix A:");
-            printMatrix(AData, DataWidth);
+            matrix.printMatrix(AStuff.matrix);
             writeln("Whole matrix B:");
-            printMatrix(BData, DataWidth);
+            matrix.printMatrix(BStuff.matrix);
             writeln();
         }
         mh.barrier();
