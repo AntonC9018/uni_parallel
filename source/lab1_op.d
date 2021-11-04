@@ -3,10 +3,11 @@ import mh = mpihelper;
 import std.stdio : writeln;
 import std.range;
 import std.algorithm;
+import core.thread;
 import matrix;
 
 // DATA processed by the processes
-static if (0)
+static if (1)
 {
     enum DataWidth = 6;
     immutable AData = [
@@ -16,7 +17,7 @@ static if (0)
         1,  1,  1,  1,  0,  0,
         0,  0,  0,  0,  0,  0,
         -1, -1, -1, -1, -1, -1,
-        // -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1,
     ];
     immutable BData = [
         0,  2,  1,  0, -1, -2,
@@ -25,10 +26,10 @@ static if (0)
         0,  0,  0,  0, -1, -2,
         0,  0,  0,  0,  0, -2,
         0,  0,  0,  0,  0,  0,
-        // -1, -1, -1, -1, -1, -1,
+        -1, -1, -1, -1, -1, -1,
     ];
 }
-else static if (1)
+else static if (0)
 {
     enum DataWidth = 3;
     immutable AData = [ 1, 1, 1, 1, 1, 1, 1, 1, 1 ];
@@ -88,7 +89,7 @@ int main()
         const rowIndexStart = offsetForProcess(info.rank, matrix.height);
         const rowIndexEnd = offsetForProcess(info.rank + 1, matrix.height);
         stuff.rowIndexRange = Range([rowIndexStart, rowIndexEnd - 1]);
-        stuff.maxRowsPerProcess = cast(size_t) (matrix.height + matrix.height - 1) / (info.size);
+        stuff.maxRowsPerProcess = cast(size_t) (matrix.height + info.size - 1) / info.size;
 
         FirstPassReduceBufferInfo reduceBufferInfo;
         reduceBufferInfo.numRows = stuff.maxRowsPerProcess;
@@ -97,7 +98,7 @@ int main()
         reduceBufferInfo.reduceBuffer = stuff.reduceBuffer1.ptr;
 
         // Now set up the buffer
-        reduceBufferInfo.maxElementCounts[0] = -1;
+        reduceBufferInfo.markUnprocessed();
         foreach (rowIndex; 0..stuff.rowIndexRange.length)
         {
             auto row = reduceBufferInfo.getRow(rowIndex);
@@ -120,15 +121,18 @@ int main()
     {
         static if (1)
         {
-            import core.thread;
-            Thread.sleep(dur!"msecs"(30 * info.rank));
+            Thread.sleep(dur!"msecs"(20 * info.rank));
             writeln("Process ", info.rank);
             if (info.rank == 0)
             {
                 writeln("Whole matrix A:");
                 matrix.printMatrix(AStuff.matrix);
-                writeln("Whole matrix B:");
+                writeln("Whole matrix B (transposed):");
                 matrix.printMatrix(BStuff.matrix);
+                writeln("Max rows per process A:");
+                writeln(AStuff.maxRowsPerProcess);
+                writeln("Max rows per process B:");
+                writeln(BStuff.maxRowsPerProcess);
                 writeln();
             }
             writeln("Number of maximums A:");
@@ -159,7 +163,9 @@ int main()
     }
     doFirstPass(AStuff);
     doFirstPass(BStuff);
-
+    debugPrint();
+    mh.barrier();
+    Thread.sleep(dur!"msecs"(10));
 
     void adjustStuffForSecondPass(Stuff)(ref Stuff stuff)
     {
@@ -193,14 +199,14 @@ int main()
                 row[colIndex].rank = cast(int) actualRowIndex;
             }
         }
-        if (stuff.rowIndexRange.length != stuff.maxRowsPerProcess)
+        if (stuff.rowIndexRange.length < stuff.maxRowsPerProcess)
             (cast(int[]) firstPass.getRow(stuff.rowIndexRange.length))[0] = int.min;
     }
     adjustStuffForSecondPass(AStuff);
     adjustStuffForSecondPass(BStuff);
     
     auto secondPassOperation = mh.createOp!secondPassOperationFunction(true);
-    scope(exit) mh.free(firstPassOperation);
+    scope(exit) mh.free(secondPassOperation);
 
     void doSecondPass(Stuff)(ref Stuff stuff)
     {
@@ -221,6 +227,7 @@ int main()
         struct Position { int colIndex; int rowIndex; }
         bool[Position] hashSet;
         auto ASecondPassBufferInfo = AStuff.getSecondPassBufferInfo();
+
         foreach (colIndex; 0..AStuff.matrix.width)
         foreach (rowIndex; ASecondPassBufferInfo.getIndexBufferHead(colIndex))
         {
@@ -228,17 +235,28 @@ int main()
         }
 
         Position[] points;
-        auto BSecondPassBufferInfo = AStuff.getSecondPassBufferInfo();
-        // B is transposed
-        foreach (rowIndex; 0..BStuff.matrix.width)
-        foreach (colIndex; BSecondPassBufferInfo.getIndexBufferHead(rowIndex))
+        auto BSecondPassBufferInfo = BStuff.getSecondPassBufferInfo();
+        foreach (colIndex; 0..BStuff.matrix.width)
+        foreach (rowIndex; BSecondPassBufferInfo.getIndexBufferHead(colIndex))
         {
-            auto pos = Position(colIndex, cast(int) rowIndex);
+            // B is transposed
+            auto pos = Position(rowIndex, cast(int) colIndex);
             if (pos in hashSet)
                 points ~= pos;
         }
 
-        writeln(points);
+        writeln("Indices of max elements on columns of A:");
+        foreach (colIndex; 0..AStuff.matrix.width)
+            writeln(colIndex, ": ", ASecondPassBufferInfo.getIndexBufferHead(colIndex));
+
+        writeln("Indices of max elements on rows (columns) of B (B transposed):");
+        foreach (colIndex; 0..BStuff.matrix.width)
+            writeln(colIndex, ": ", BSecondPassBufferInfo.getIndexBufferHead(colIndex));
+        writeln();
+
+        writeln("Nash equilibrium points: ");
+        foreach (point; points)
+            writeln("(", point.rowIndex, ", ", point.colIndex, ")");
     }
 
     return 0;
@@ -275,6 +293,9 @@ struct FirstPassReduceBufferInfo
     }
     int[] maxElementsRow() { return getRow(0); }
     size_t length() { return width * numRows + width; }
+
+    bool isUnprocessed() { return maxElementCounts[0] == int.min; }
+    void markUnprocessed() { maxElementCounts[0] = int.min; }
 }
 
 FirstPassReduceBufferInfo getFirstPassBufferInfo(Stuff)(ref Stuff stuff)
@@ -325,11 +346,11 @@ struct SecondPassReduceBufferInfo
         return cast(size_t)((cast(int*) getRow(numRows).ptr) - reduceBuffer); 
     }
 
-    bool isUnprocessed() { return reduceBuffer[0] == -1; }
+    bool isUnprocessed() { return reduceBuffer[0] == int.min; }
 
     // Here we indicate that we have not been processed yet.
-    // -1 in the header of the first index buffer indicates that.
-    void markUnprocessed() { reduceBuffer[0] = -1; }
+    // int.min in the header of the first index buffer indicates that.
+    void markUnprocessed() { reduceBuffer[0] = int.min; }
 }
 
 SecondPassReduceBufferInfo getSecondPassBufferInfo(Stuff)(ref Stuff stuff)
@@ -377,23 +398,24 @@ void firstPassOperationFunction(int* inReduceBuffer, int* inoutReduceBuffer, int
     }
 
     // If the inout buffer has not been processed, do it.
-    if (inoutBufferInfo.maxElementCounts[0] == -1)
+    if (inoutBufferInfo.isUnprocessed)
     {
         inoutBufferInfo.maxElementCounts[] = 1;
+        assert(!inoutBufferInfo.isUnprocessed);
         inoutBufferInfo.iterateRows(1).each!update;
     }
     
     // The in buffer has previously been modified.
     // In this case we just need to check the row with the maximums, and adjust
     // the counts accordingly.
-    if (inBufferInfo.maxElementCounts[0] != -1)
+    if (!inBufferInfo.isUnprocessed)
     {
         int[] otherFirstRow = inBufferInfo.getRow(0);
         foreach (colIndex; 0..inoutBufferInfo.width)
         {
-            if (otherFirstRow[colIndex] == firstRow[colIndex])
+            if (firstRow[colIndex] == otherFirstRow[colIndex])
                 inoutBufferInfo.maxElementCounts[colIndex] += inBufferInfo.maxElementCounts[colIndex];
-            else if (otherFirstRow[colIndex] < firstRow[colIndex])
+            else if (firstRow[colIndex] < otherFirstRow[colIndex])
             {
                 inoutBufferInfo.maxElementCounts[colIndex] = inBufferInfo.maxElementCounts[colIndex];
                 firstRow[colIndex] = otherFirstRow[colIndex];
@@ -429,6 +451,7 @@ void secondPassOperationFunction(int* inReduceBuffer, int* inoutReduceBuffer, in
     if (inoutBufferInfo.isUnprocessed)
     {
         inoutBufferInfo.reduceBuffer[0] = 0;
+        assert(!inoutBufferInfo.isUnprocessed);
         inoutBufferInfo.iterateRows(0).each!update;
     }
     if (!inBufferInfo.isUnprocessed)
@@ -443,6 +466,6 @@ void secondPassOperationFunction(int* inReduceBuffer, int* inoutReduceBuffer, in
     }
     else
     {
-        inBufferInfo.iterateRows(1).each!update;
+        inBufferInfo.iterateRows(0).each!update;
     }
 }
