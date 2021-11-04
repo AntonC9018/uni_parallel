@@ -42,7 +42,7 @@ Voi descrie în scurt toate etapele algoritmului elaborat:
    Eu am folosit un tablou asociativ, în care la început adaug toate perechile (rând, coloană) maximale din $ A $,
    iar pe urmă, datorită faptului că căutarea este $ O(1) $, mă uit dacă indicii există în tablou.
    Aceasta va fi mai lent pentru tablouri mici, însă pentru tablouri mari cu multe elemente maximale, are sens de folosit așa ceva.
-   (Și mai bine ar fi fost să am mai multe așa tablouri pentru fiecare coloană din A, deoarece unul de indici de căutare mereu se cunoaște).
+   (Și mai bine ar fi fost să am mai multe așa tablouri pentru fiecare coloană din A, deoarece unul din indici de căutare mereu se cunoaște).
 
 
 ## Realizarea
@@ -53,7 +53,7 @@ Nu voi descrie codul, doar voi evidenția momentele legate de operații MPI.
 
 Funcția `mh.createOp` apelează `MPI_Op_create`, transmitând pointerul la funcția `firstPassOperationFunction`, și `true` ca valoarea pentru `commute` (este o operație comutativă).
 
-`scope(exit) mh.free` șterge operația apelând `MPI_Op_free`, în momentul când se termină execuția funcția `main` (`scope(exit)` lucrează ca destructori în C++).
+`scope(exit) mh.free` șterge operația, apelând `MPI_Op_free`, în momentul când își termină execuția funcția `main` (`scope(exit)` lucrează ca destructori în C++).
 
 ```d
 auto firstPassOperation = mh.createOp!firstPassOperationFunction(true);
@@ -88,7 +88,7 @@ La al doilea pas avem apelări asemănătoare.
 ## Executarea
 
 Iată un exemplu de executare pe 4 procese, deci procesele primesc un număr diferit de linii.
-Matricile sunt ca la exemplu dvs, dar am mai adăugat o linie de -1. Aceste numere nu schimbă rezultatul, ci doar arată că programul nu eșuează și cu dimensiuni neegale la matrici.
+Matricile sunt ca la exemplu dvs, dar am mai adăugat câte o linie de -1 în fiecare matrice. Aceste numere nu schimbă rezultatul, ci doar arată că programul nu eșuează și cu dimensiuni diferite la matrici.
 
 ```
 $ ./compile.sh lab1_op matrix.d
