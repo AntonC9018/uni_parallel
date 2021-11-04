@@ -45,7 +45,7 @@ int main()
 
     size_t offsetForProcess(int processIndex, size_t vectorCount)
     {
-        return cast(size_t) processIndex * vectorCount / info.size;
+        return cast(size_t) (processIndex * vectorCount / info.size);
     }
 
     // 1. Distribute rows
@@ -106,7 +106,7 @@ int main()
                 row[colIndex] = matrix[rowIndex + stuff.rowIndexRange.arrayof[0], colIndex];
         }
         if (stuff.rowIndexRange.length != stuff.maxRowsPerProcess)
-            reduceBufferInfo.getRow(stuff.rowIndexRange.length)[0] = int.min;
+            reduceBufferInfo.getRow(stuff.rowIndexRange.length)[] = int.min;
 
         return stuff;
     }
@@ -200,7 +200,7 @@ int main()
             }
         }
         if (stuff.rowIndexRange.length < stuff.maxRowsPerProcess)
-            (cast(int[]) firstPass.getRow(stuff.rowIndexRange.length))[0] = int.min;
+            secondPass.getRow(stuff.rowIndexRange.length)[] = mh.IntInt(int.min, -1);
     }
     adjustStuffForSecondPass(AStuff);
     adjustStuffForSecondPass(BStuff);
@@ -294,7 +294,7 @@ struct FirstPassReduceBufferInfo
     size_t length() { return width * numRows + width; }
 
     bool isUnprocessed() { return maxElementCounts[0] == int.min; }
-    void markUnprocessed() { maxElementCounts[0] = int.min; }
+    void markUnprocessed() { maxElementCounts[] = int.min; }
 }
 
 FirstPassReduceBufferInfo getFirstPassBufferInfo(Stuff)(ref Stuff stuff)
@@ -365,9 +365,10 @@ SecondPassReduceBufferInfo getSecondPassBufferInfo(Stuff)(ref Stuff stuff)
 // UFCS functions must be defined outside local functions
 auto iterateRows(BufferInfo)(ref BufferInfo info, size_t startingIndex) 
 {
-    return iota(startingIndex, info.numRows)
+    return iota(0, info.numRows)
         .map!(i => info.getRow(i))
-        .until!(a => (cast(int*)&a)[0] == int.min);
+        .until!(a => (cast(int*)&a)[0] == int.min)
+        .drop(startingIndex);
 }
 
 __gshared size_t g_currentWidth;
