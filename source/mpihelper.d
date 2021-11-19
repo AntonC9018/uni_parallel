@@ -252,9 +252,9 @@ int gather(T, U)(T sendBuffer, U[] recvBuffer, int root, int groupSize, MPI_Comm
     alias sendBufferInfo = BufferInfo!sendBuffer;
     
     // Make sure the recv buffer can hold all input of all processes combined.
-    assert(recvBuffer.length / groupSize >= sendBufferInfo.length);
+    // assert(recvBuffer.length >= sendBufferInfo.length * groupSize);
     // The types must match.
-    static assert(__traits(isSame, sendBufferInfo.datatype, Datatype!U));
+    static assert(is(sendBufferInfo.ElementType == typeof(recvBuffer[0])));
 
     return MPI_Gather(UnrollBuffer!sendBuffer, recvBuffer.ptr, sendBufferInfo.length, sendBufferInfo.datatype, root, comm);
 }
@@ -1465,7 +1465,7 @@ auto getCyclicLayoutInfo(TArray : int[N], size_t N)(
     return result;
 }
 
-void printAsMatrix(int[] data, int width)
+void printAsMatrix(const int[] data, int width)
 {
     import std.stdio : writef, writeln;
     import std.range : iota;
